@@ -1,0 +1,9 @@
+@import "tailwindcss";
+@import "@nfs/ui/styles.css";
+@source "../../../../packages/ui/src";
+
+@media print {
+  .no-print { display: none !important; }
+  body { background: white; }
+  .print-full { margin: 0 !important; padding: 0 !important; max-width: none !important; }
+}

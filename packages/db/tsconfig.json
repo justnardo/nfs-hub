@@ -1,0 +1,5 @@
+{
+  "extends": "@nfs/config/tsconfig.base.json",
+  "compilerOptions": { "allowImportingTsExtensions": true },
+  "include": ["src", "scripts"]
+}
