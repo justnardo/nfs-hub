@@ -1,14 +1,14 @@
 {
   "name": "nfs-hub",
   "private": true,
-  "description": "NFS operations hub — Gateline, Rampline, TakeFlight and the Brain. Built by First Glance Bahamas.",
+  "description": "NFS operations hub \u2014 Gateline, Rampline, TakeFlight and the Brain. Built by First Glance Bahamas.",
   "packageManager": "pnpm@10.28.0",
   "scripts": {
     "dev": "turbo run dev",
     "build": "turbo run build",
     "lint": "turbo run lint",
     "typecheck": "turbo run typecheck",
-    "seed:sql": "pnpm --filter @nfs/db seed:sql"
+    "seed:sql": "pnpm --filter @nfs/demo seed:sql"
   },
   "devDependencies": {
     "turbo": "^2.6.0",

@@ -2,7 +2,11 @@
 import * as React from "react";
 import Link from "next/link";
 import { useParams } from "next/navigation";
-import { ArrowLeft, Mail, Phone } from "lucide-react";
+import { ArrowLeft, Mail, Pencil, Phone, Plus, Trash2 } from "lucide-react";
+import { useRouter } from "next/navigation";
+import { can } from "@nfs/auth";
+import type { RouteTemplate } from "@nfs/demo";
+import { AirlineDialog, RouteDialog } from "@/components/airline-editor";
 import { Avatar, Badge, Button, Card, CardContent, CardDescription, CardHeader, CardTitle, PageHeader, Stat, Table, Td, Th, Tr } from "@nfs/ui";
 import { addDays, formatDate } from "@nfs/db";
 import { eligibleFor, expiringSoon } from "@nfs/rules";
@@ -22,8 +26,13 @@ export default function AirlinePage() {
 function AirlineProfile() {
   const { code } = useParams<{ code: string }>();
   const hub = useHub();
+  const router = useRouter();
+  const [editing, setEditing] = React.useState(false);
+  const [route, setRoute] = React.useState<RouteTemplate | "new" | null>(null);
+  const [confirmRemove, setConfirmRemove] = React.useState(false);
   const a = hub.ds.airlines.find((x) => x.code === code);
   if (!a) return <p className="text-sm text-muted">Airline not found.</p>;
+  const manage = can(hub.session?.role, "airlines.edit");
   const map = new Map(hub.ds.airlines.map((x) => [x.code, x]));
   const since = addDays(hub.today, -21);
   const logs = hub.gateLogs.filter((g) => g.airline === a.code && g.date >= since);
@@ -31,7 +40,8 @@ function AirlineProfile() {
   const core = hub.ds.people.filter((p) => p.coreAirline === a.code).sort((x, y) => (x.role === y.role ? x.lastName.localeCompare(y.lastName) : x.role === "lead" ? -1 : 1));
   const backup = hub.ds.people.filter((p) => p.coreAirline !== a.code && p.trainedAirlines.includes(a.code) && (p.role === "agent" || p.role === "lead"));
   const fb = hub.feedback.filter((f) => f.airline === a.code).slice(0, 5);
-  const routes = [...new Map(hub.ds.flights.filter((f) => f.airline === a.code).map((f) => [f.flightNo, f])).values()];
+  const routes = hub.routes.filter((r) => r.airline === a.code).sort((x, y) => x.std.localeCompare(y.std));
+  const DOW = ["Su", "Mo", "Tu", "We", "Th", "Fr", "Sa"];
 
   return (
     <>
@@ -40,8 +50,26 @@ function AirlineProfile() {
         eyebrow={a.terminal === "US" ? "US Departures Terminal" : "International Terminal"}
         title={a.name}
         description={a.stationManager.preferences}
-        actions={!a.slaConfirmed ? <Badge tone="gold">SLA figures are placeholders until NFS confirms</Badge> : null}
+        actions={
+          <>
+            {!a.slaConfirmed ? <Badge tone="gold">SLA figures are placeholders until NFS confirms</Badge> : null}
+            {manage ? <Button variant="outline" onClick={() => setEditing(true)}><Pencil /> Edit airline</Button> : null}
+            {manage ? (
+              confirmRemove ? (
+                <>
+                  <span className="text-xs text-muted">Remove {a.code}? Its core staff move to the float pool.</span>
+                  <Button variant="danger" size="sm" onClick={() => { hub.removeAirline(a.code); router.push("/airlines"); }}>Remove</Button>
+                  <Button variant="ghost" size="sm" onClick={() => setConfirmRemove(false)}>Keep</Button>
+                </>
+              ) : (
+                <Button variant="ghost" size="icon" title="Remove airline" onClick={() => setConfirmRemove(true)}><Trash2 /></Button>
+              )
+            ) : null}
+          </>
+        }
       />
+      {editing ? <AirlineDialog airline={a} onClose={() => setEditing(false)} /> : null}
+      {route ? <RouteDialog airline={a} route={route === "new" ? undefined : route} onClose={() => setRoute(null)} /> : null}
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
         <Stat label="On-time D0 · 21 days" value={pct(s.d0)} tone={s.d0 >= 85 ? "ok" : "warn"} sub={`${s.flights} flights`} />
         <Stat label="D15" value={pct(s.d15)} />
@@ -61,7 +89,7 @@ function AirlineProfile() {
                   const soon = expiringSoon(p, hub.today).filter((t) => t.airline === a.code);
                   return (
                     <Tr key={p.id}>
-                      <Td><div className="flex items-center gap-2"><Avatar name={personName(p)} tone={p.role === "lead" ? "dark" : "brand"} className="size-7" /><PersonLink p={p} /></div></Td>
+                      <Td><div className="flex items-center gap-2"><Avatar name={personName(p)} src={p.photoUrl} tone={p.role === "lead" ? "dark" : "brand"} className="size-7" /><PersonLink p={p} /></div></Td>
                       <Td className="capitalize">{p.role}</Td>
                       <Td><div className="flex flex-wrap gap-1">{p.trainedAirlines.filter((c) => c !== a.code).map((c) => <AirlineChip key={c} airline={map.get(c)!} />)}</div></Td>
                       <Td>{!e.ok ? <Badge tone="bad">{e.reason}</Badge> : soon.length ? <Badge tone="warn">Expires {formatDate(soon[0].expires, { day: "numeric", month: "short" })}</Badge> : <Badge tone="ok">Current</Badge>}</Td>
@@ -103,11 +131,27 @@ function AirlineProfile() {
 
       <div className="mt-5 grid gap-5 lg:grid-cols-2">
         <Card>
-          <CardHeader><div><CardTitle>Schedule handled</CardTitle></div></CardHeader>
+          <CardHeader>
+            <div><CardTitle>Flight schedule</CardTitle><CardDescription>Feeds SLA demand for rosters and coverage</CardDescription></div>
+            {manage ? <Button variant="secondary" size="sm" onClick={() => setRoute("new")}><Plus /> Add departure</Button> : null}
+          </CardHeader>
           <CardContent className="px-2 sm:px-5">
+            {routes.length === 0 ? <p className="px-2 text-sm text-muted">No departures scheduled yet{manage ? " — add the first one" : ""}.</p> : null}
             <Table>
-              <thead><tr><Th>Flight</Th><Th>To</Th><Th>STD</Th><Th>Aircraft</Th><Th>Gate</Th></tr></thead>
-              <tbody>{routes.map((f) => <Tr key={f.flightNo}><Td className="font-semibold">{f.flightNo}</Td><Td>{f.destinationName}</Td><Td className="tabular">{f.std}</Td><Td>{f.aircraft}</Td><Td>{f.gate}</Td></Tr>)}</tbody>
+              <thead><tr><Th>Flight</Th><Th>To</Th><Th>STD</Th><Th>Days</Th><Th>Aircraft</Th><Th>Gate</Th>{manage ? <Th /> : null}</tr></thead>
+              <tbody>
+                {routes.map((r) => (
+                  <Tr key={r.flightNo}>
+                    <Td className="font-semibold">{r.flightNo}</Td>
+                    <Td>{r.destName} <span className="text-xs text-muted">{r.dest}</span></Td>
+                    <Td className="tabular">{r.std}</Td>
+                    <Td className="text-xs">{r.days ? r.days.map((d) => DOW[d]).join(" ") : "Daily"}</Td>
+                    <Td>{r.aircraft}</Td>
+                    <Td>{r.gate}</Td>
+                    {manage ? <Td><Button variant="ghost" size="icon" onClick={() => setRoute(r)} aria-label={`Edit ${r.flightNo}`}><Pencil /></Button></Td> : null}
+                  </Tr>
+                ))}
+              </tbody>
             </Table>
           </CardContent>
         </Card>

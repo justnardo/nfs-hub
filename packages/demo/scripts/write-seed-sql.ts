@@ -5,8 +5,8 @@
  */
 import { writeFileSync } from "node:fs";
 import { resolve } from "node:path";
+import { nassauNow } from "@nfs/db";
 import { generateDataset } from "../src/seed/generate";
-import { nassauNow } from "../src/time";
 
 const now = nassauNow();
 const ds = generateDataset(process.env.SEED_DATE ?? now.date, process.env.SEED_DATE ? 24 * 60 : now.minutes);

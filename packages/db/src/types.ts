@@ -29,6 +29,8 @@ export interface Airline {
   stationManager: { name: string; phone: string; email: string; preferences: string };
   requiredTraining: string[];
   usesJetBridge: boolean;
+  /** Added by a manager in the app (not part of the seed) */
+  custom?: boolean;
 }
 
 export interface TrainingRecord {
@@ -53,6 +55,11 @@ export interface Person {
   training: TrainingRecord[];
   phone: string;
   hireYear: number;
+  /** Self-service fields (staff can edit) */
+  email?: string;
+  photoUrl?: string | null;
+  /** Managers can deactivate a staff record without deleting history */
+  active?: boolean;
 }
 
 export interface Flight {

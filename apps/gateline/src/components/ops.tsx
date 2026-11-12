@@ -5,8 +5,8 @@ import { AlertTriangle, Ban, CheckCircle2, ShieldAlert } from "lucide-react";
 import { Avatar, Badge, Button, Dialog, DialogContent, Label, Textarea, cn } from "@nfs/ui";
 import { can } from "@nfs/auth";
 import { SHIFTS, formatDate, type Airline, type FlightStatus, type Person } from "@nfs/db";
-import { checkReassignment, type CoverageCell, type CoverageLevel, type ReassignCheck } from "@nfs/rules";
-import { useHub, personName } from "@/lib/store";
+import { checkReassignment, suggestFixes, type CoverageCell, type CoverageLevel } from "@nfs/rules";
+import { useHub, useEngineInput, personName } from "@/lib/store";
 
 export function AirlineChip({ airline, size = "sm" }: { airline: Airline; size?: "sm" | "md" }) {
   const [failed, setFailed] = React.useState(false);
@@ -136,40 +136,53 @@ function Legend({ cls, label }: { cls: string; label: string }) {
 }
 
 /* ---------------- Protected reassignment ---------------- */
+/** Ranked fixes for one gap — the engine proposes, a manager approves. */
 export function ReassignDialog({ cell, open, onOpenChange }: { cell: CoverageCell | null; open: boolean; onOpenChange: (v: boolean) => void }) {
   const hub = useHub();
-  const [selected, setSelected] = React.useState<string | null>(null);
+  const input = useEngineInput();
+  const [chosen, setChosen] = React.useState<string | null>(null);
   const [reason, setReason] = React.useState("");
+  const [showBlocked, setShowBlocked] = React.useState(false);
   React.useEffect(() => {
-    setSelected(null);
+    setChosen(null);
     setReason("");
-  }, [cell]);
+    setShowBlocked(false);
+  }, [cell?.airline, cell?.date, cell?.shift]);
+
+  const fixes = React.useMemo(() => (cell && open ? suggestFixes(input, { airline: cell.airline, date: cell.date, shift: cell.shift }, hub.rules) : []), [cell, open, input, hub.rules]);
   if (!cell) return null;
   const airline = hub.ds.airlines.find((a) => a.code === cell.airline)!;
-  const input = { airlines: hub.ds.airlines, people: hub.ds.people, flights: hub.ds.flights, roster: hub.ds.roster, reassignments: hub.reassignments };
   const flights = hub.ds.flights.filter((f) => cell.flightIds.includes(f.id));
-
-  // candidates: everyone rostered on this shift who isn't on this airline's core team
-  const onShift = new Set(hub.ds.roster.filter((r) => r.date === cell.date && r.shift === cell.shift).map((r) => r.personId));
-  const already = new Set(hub.reassignments.filter((r) => r.date === cell.date && r.shift === cell.shift).map((r) => r.personId));
-  const candidates = hub.ds.people
-    .filter((p) => (p.role === "agent" || p.role === "lead") && onShift.has(p.id) && p.coreAirline !== airline.code && !already.has(p.id))
-    .map((p) => ({ p, check: checkReassignment(input, p, airline, cell.date, cell.shift) }))
-    .sort((a, b) => order(a.check) - order(b.check) || Number(!!a.p.coreAirline) - Number(!!b.p.coreAirline));
-
   const placed = hub.reassignments.filter((r) => r.date === cell.date && r.shift === cell.shift && r.toAirline === airline.code);
-  const chosen = candidates.find((c) => c.p.id === selected);
   const role = hub.session?.role;
-  const needsOverride = chosen?.check.verdict === "warn";
-  const canOverride = can(role, "reassign.override");
   const canApprove = can(role, "reassign.approve");
+  const canOverride = can(role, "reassign.override");
+  const canEdit = can(role, "roster.edit");
+  const fix = fixes.find((f) => f.id === chosen);
+  const offered = new Set(fixes.map((f) => f.personId).filter(Boolean));
+  const blocked = hub.ds.people
+    .filter((p) => (p.role === "agent" || p.role === "lead") && p.coreAirline !== airline.code && !offered.has(p.id))
+    .filter((p) => {
+      const s = hub.ds.roster.find((r) => r.personId === p.id && r.date === cell.date)?.shift;
+      return s === cell.shift || s === "M";
+    })
+    .map((p) => ({ p, check: checkReassignment(input, p, airline, cell.date, cell.shift) }))
+    .filter((x) => x.check.verdict === "block");
+  const allowedToApply = (f: (typeof fixes)[number]) => {
+    if (f.kind === "leave-empty") return true;
+    if (f.edits.length && !canEdit) return false;
+    if (f.reassignment && !can(role, "reassign.request")) return false;
+    if (f.needsOverride && !canOverride) return false;
+    return true;
+  };
+  const closesAny = fixes.some((f) => f.closes && !f.newHard.length);
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent
         className="max-w-2xl"
         title={`${airline.name} · ${formatDate(cell.date, { weekday: "long", day: "numeric", month: "short" })} · ${SHIFTS[cell.shift].label}`}
-        description={`${cell.assigned} of ${cell.required} agents against SLA · lead ${cell.leadsAssigned}/${cell.leadsRequired} · ${flights.map((f) => `${f.flightNo} ${f.std}`).join(", ") || "no departures"}`}
+        description={`${cell.assigned} of ${cell.required} agents against SLA · lead ${cell.leadsAssigned}/${cell.leadsRequired}${cell.gaps.length ? ` · gap ${cell.gaps.map((g) => `${g.from}–${g.to}`).join(", ")}` : ""} · ${flights.map((f) => `${f.flightNo} ${f.std}`).join(", ") || "no departures"}`}
       >
         {placed.length ? (
           <div className="mb-4 rounded-lg border border-brand-100 bg-brand-50 p-3">
@@ -183,85 +196,101 @@ export function ReassignDialog({ cell, open, onOpenChange }: { cell: CoverageCel
           </div>
         ) : null}
 
-        <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-muted">Who can cover · on shift, ranked by impact</p>
-        <div className="max-h-[42vh] space-y-1.5 overflow-y-auto pr-1">
-          {candidates.length === 0 ? <p className="text-sm text-muted">Nobody else is rostered on this shift.</p> : null}
-          {candidates.map(({ p, check }) => (
-            <button
-              key={p.id}
-              disabled={check.verdict === "block"}
-              onClick={() => setSelected(p.id)}
-              className={cn(
-                "flex w-full items-start gap-3 rounded-lg border p-2.5 text-left transition-colors",
-                check.verdict === "block" ? "cursor-not-allowed border-line bg-surface opacity-60" : "cursor-pointer border-line bg-card hover:border-brand-400 hover:bg-brand-50",
-                selected === p.id && "border-brand-500 bg-brand-50 ring-2 ring-brand-100",
-              )}
-            >
-              <Avatar name={personName(p)} />
-              <div className="min-w-0 flex-1">
-                <div className="flex flex-wrap items-center gap-1.5 text-sm font-semibold">
-                  {personName(p)}
-                  <Badge tone={p.coreAirline ? "neutral" : "brand"}>{p.coreAirline ? `Core ${p.coreAirline}` : "Float pool"}</Badge>
-                  {p.role === "lead" ? <Badge tone="dark">Lead</Badge> : null}
+        <div className="mb-2 flex items-center justify-between">
+          <p className="text-xs font-semibold uppercase tracking-wide text-muted">Suggested fixes · best first</p>
+          {!closesAny && fixes.length > 1 ? <Badge tone="warn">No single move closes this gap</Badge> : null}
+        </div>
+        <div className="max-h-[44vh] space-y-1.5 overflow-y-auto pr-1">
+          {fixes.map((f) => {
+            const p = f.personId ? hub.people.get(f.personId) : null;
+            const ok = allowedToApply(f);
+            return (
+              <button
+                key={f.id}
+                disabled={!ok}
+                onClick={() => setChosen(f.id)}
+                className={cn(
+                  "flex w-full items-start gap-3 rounded-lg border p-2.5 text-left transition-colors",
+                  ok ? "cursor-pointer border-line bg-card hover:border-brand-400 hover:bg-brand-50" : "cursor-not-allowed border-line bg-surface opacity-60",
+                  chosen === f.id && "border-brand-500 bg-brand-50 ring-2 ring-brand-100",
+                )}
+              >
+                {p ? <Avatar name={personName(p)} src={p.photoUrl} /> : <span className="grid size-8 place-items-center rounded-full bg-surface text-muted"><Ban className="size-4" /></span>}
+                <div className="min-w-0 flex-1">
+                  <div className="flex flex-wrap items-center gap-1.5 text-sm font-semibold">
+                    {f.title}
+                    <Badge tone={f.kind === "pull" ? "brand" : f.kind === "overtime" ? "gold" : "neutral"}>{FIX_LABEL[f.kind]}</Badge>
+                  </div>
+                  <p className="mt-0.5 text-xs text-muted">{f.detail}</p>
+                  {[...f.newHard, ...f.newSoft].slice(0, 2).map((v) => (
+                    <p key={v.ruleId + v.date + v.message} className={cn("mt-0.5 text-xs", v.severity === "hard" ? "text-bad" : "text-amber-700")}>{v.severity === "hard" ? "Breaks: " : "Note: "}{v.message.replace(/^[^:]+: /, "")}</p>
+                  ))}
                 </div>
-                <ul className="mt-0.5 space-y-0.5">
-                  {check.notes.map((n) => <li key={n} className="text-xs text-muted">{n}</li>)}
-                </ul>
-              </div>
-              <Verdict check={check} />
-            </button>
-          ))}
+                {f.kind !== "leave-empty" ? <FixVerdict closes={f.closes} improves={f.improves} hard={f.newHard.length} override={f.needsOverride} /> : null}
+              </button>
+            );
+          })}
         </div>
 
-        {chosen ? (
+        {blocked.length ? (
+          <div className="mt-3">
+            <button onClick={() => setShowBlocked((v) => !v)} className="text-xs font-semibold text-brand-600 transition-colors hover:text-brand-700 cursor-pointer">
+              {showBlocked ? "Hide" : "Show"} {blocked.length} on shift who can't cover {airline.code}
+            </button>
+            {showBlocked ? (
+              <ul className="mt-2 space-y-1">
+                {blocked.map(({ p, check }) => (
+                  <li key={p.id} className="flex items-center gap-2 text-xs text-muted"><Ban className="size-3.5 text-bad" /> <span className="font-semibold text-fg">{personName(p)}</span> — {check.notes[0]}</li>
+                ))}
+              </ul>
+            ) : null}
+          </div>
+        ) : null}
+
+        {fix && fix.kind !== "leave-empty" ? (
           <div className="mt-4 space-y-3 border-t border-line pt-4">
-            {needsOverride ? (
+            {fix.needsOverride ? (
               <div className="rounded-lg border border-amber-200 bg-warn-soft p-3 text-sm text-amber-900">
                 <p className="flex items-center gap-1.5 font-semibold"><ShieldAlert className="size-4" /> Protected core agent</p>
-                <p className="mt-1 text-xs">Moving {chosen.p.firstName} leaves {chosen.p.coreAirline} below SLA. {canOverride ? "A manager override with a reason is recorded against this move." : "Only a manager can override — send as a request."}</p>
+                <p className="mt-1 text-xs">{fix.detail} The reason is recorded against the move.</p>
               </div>
             ) : null}
-            {needsOverride && canOverride ? (
+            {fix.needsOverride ? (
               <div>
                 <Label htmlFor="reason">Override reason</Label>
                 <Textarea id="reason" value={reason} onChange={(e) => setReason(e.target.value)} placeholder="e.g. UA flight delayed 2h, core team released early" className="mt-1" />
               </div>
             ) : null}
             <div className="flex justify-end gap-2">
-              <Button variant="outline" onClick={() => setSelected(null)}>Cancel</Button>
+              <Button variant="outline" onClick={() => setChosen(null)}>Cancel</Button>
               <Button
-                disabled={(needsOverride && (!canOverride || reason.trim().length < 4)) || !can(role, "reassign.request")}
+                disabled={fix.needsOverride && reason.trim().length < 4}
                 onClick={() => {
-                  hub.addReassignment({
-                    date: cell.date,
-                    shift: cell.shift,
-                    personId: chosen.p.id,
-                    fromAirline: chosen.p.coreAirline ?? "POOL",
-                    toAirline: airline.code,
-                    overrideReason: needsOverride ? reason.trim() : null,
-                    approvedBy: hub.session?.name ?? "",
-                  });
-                  setSelected(null);
+                  hub.applyFix(fix, fix.needsOverride ? reason.trim() : null);
+                  setChosen(null);
+                  setReason("");
                 }}
               >
-                {needsOverride ? "Override and place cover" : `Place ${chosen.p.firstName} on ${airline.code}`}
+                {fix.needsOverride ? "Override and apply" : "Apply fix"}
               </Button>
             </div>
           </div>
+        ) : fix?.kind === "leave-empty" ? (
+          <div className="mt-4 flex justify-end border-t border-line pt-4"><Button variant="outline" onClick={() => onOpenChange(false)}>Leave as is</Button></div>
         ) : null}
       </DialogContent>
     </Dialog>
   );
 }
 
-function order(c: ReassignCheck) {
-  return c.verdict === "allow" ? 0 : c.verdict === "warn" ? 1 : 2;
-}
+const FIX_LABEL: Record<string, string> = { pull: "Move", swap: "Swap shift", dayoff: "Day-off move", overtime: "Overtime", "leave-empty": "Leave" };
 
-function Verdict({ check }: { check: ReassignCheck }) {
-  if (check.verdict === "allow") return <span className="inline-flex items-center gap-1 text-xs font-semibold text-ok"><CheckCircle2 className="size-4" /> Safe</span>;
-  if (check.verdict === "warn") return <span className="inline-flex items-center gap-1 text-xs font-semibold text-warn"><AlertTriangle className="size-4" /> Warn</span>;
-  return <span className="inline-flex items-center gap-1 text-xs font-semibold text-bad"><Ban className="size-4" /> Blocked</span>;
+function FixVerdict({ closes, improves, hard, override }: { closes: boolean; improves: boolean; hard: number; override: boolean }) {
+  if (hard) return <span className="inline-flex shrink-0 items-center gap-1 text-xs font-semibold text-bad"><Ban className="size-4" /> Breaks rule</span>;
+  if (closes && !override) return <span className="inline-flex shrink-0 items-center gap-1 text-xs font-semibold text-ok"><CheckCircle2 className="size-4" /> Closes gap</span>;
+  if (closes) return <span className="inline-flex shrink-0 items-center gap-1 text-xs font-semibold text-warn"><AlertTriangle className="size-4" /> Closes · override</span>;
+  if (improves) return <span className="inline-flex shrink-0 items-center gap-1 text-xs font-semibold text-brand-600"><CheckCircle2 className="size-4" /> Helps</span>;
+  return <span className="text-xs text-muted">No change</span>;
 }
 
 export function PersonLink({ p }: { p?: Person | null }) {

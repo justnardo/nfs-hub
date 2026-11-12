@@ -29,6 +29,9 @@ importers:
       '@nfs/db':
         specifier: workspace:*
         version: link:../../packages/db
+      '@nfs/demo':
+        specifier: workspace:*
+        version: link:../../packages/demo
       '@nfs/events':
         specifier: workspace:*
         version: link:../../packages/events
@@ -99,6 +102,22 @@ importers:
       '@nfs/config':
         specifier: workspace:*
         version: link:../config
+
+  packages/demo:
+    dependencies:
+      '@nfs/db':
+        specifier: workspace:*
+        version: link:../db
+      '@nfs/rules':
+        specifier: workspace:*
+        version: link:../rules
+    devDependencies:
+      '@nfs/config':
+        specifier: workspace:*
+        version: link:../config
+      '@types/node':
+        specifier: ^22.10.0
+        version: 22.20.5
 
   packages/events:
     dependencies:

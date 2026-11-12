@@ -1,4 +1,4 @@
-import type { Airline } from "../types";
+import type { Airline } from "@nfs/db";
 
 /** Airline marks uploaded in Rampline (public bucket), reused so both modules show the same logos. */
 export const RAMPLINE_MARKS = "https://cajatvbkaltwxtywpsjp.supabase.co/storage/v1/object/public/airline-marks";
@@ -74,19 +74,6 @@ export const AIRLINES: Airline[] = [
     requiredTraining: ["InterCaribbean DCS"],
     usesJetBridge: false,
   },
-  {
-    code: "WU",
-    name: "Western Air",
-    terminal: "INTL",
-    colour: "#ca8a04",
-    logoUrl: `${RAMPLINE_MARKS}/WU/8fdff201-f6be-46de-bb50-c6b41fd33cee.png`,
-    aircraft: ["Saab 340", "ERJ-145"],
-    sla: { counter: 2, gate: 1, jetBridge: 0, lead: 1, supervisor: 0 },
-    slaConfirmed: false,
-    stationManager: { name: "A. Cooper", phone: "+1 242 555 0105", email: "ops@example-westernair.com", preferences: "Domestic boarding pass checks at gate." },
-    requiredTraining: ["Western Air Check-in"],
-    usesJetBridge: false,
-  },
 ];
 
 export interface RouteTemplate {
@@ -119,9 +106,4 @@ export const ROUTES: RouteTemplate[] = [
   // InterCaribbean
   { airline: "JY", flightNo: "JY 431", dest: "PLS", destName: "Providenciales", std: "09:05", turnMins: 50, aircraft: "ERJ-145", gate: "D47", seats: 50 },
   { airline: "JY", flightNo: "JY 437", dest: "PLS", destName: "Providenciales", std: "16:50", turnMins: 50, aircraft: "ERJ-145", gate: "D47", seats: 50, days: [1, 3, 5, 0] },
-  // Western Air — domestic
-  { airline: "WU", flightNo: "WU 101", dest: "FPO", destName: "Freeport", std: "07:00", turnMins: 45, aircraft: "Saab 340", gate: "D50", seats: 34 },
-  { airline: "WU", flightNo: "WU 305", dest: "GGT", destName: "George Town, Exuma", std: "10:40", turnMins: 45, aircraft: "ERJ-145", gate: "D51", seats: 50 },
-  { airline: "WU", flightNo: "WU 211", dest: "MHH", destName: "Marsh Harbour", std: "14:00", turnMins: 45, aircraft: "Saab 340", gate: "D50", seats: 34 },
-  { airline: "WU", flightNo: "WU 107", dest: "FPO", destName: "Freeport", std: "17:30", turnMins: 45, aircraft: "Saab 340", gate: "D52", seats: 34 },
 ];

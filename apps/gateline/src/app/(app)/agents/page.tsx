@@ -76,7 +76,7 @@ function Agents() {
                 <Tr key={p.id}>
                   <Td>
                     <Link href={`/agents/${p.id}`} className="flex items-center gap-2.5 transition-colors hover:text-brand-600">
-                      <Avatar name={personName(p)} tone={p.role === "agent" ? "brand" : "dark"} className="size-7" />
+                      <Avatar name={personName(p)} src={p.photoUrl} tone={p.role === "agent" ? "brand" : "dark"} className="size-7" />
                       <span><span className="block font-semibold">{personName(p)}</span><span className="text-[11px] text-muted">{p.staffNo}</span></span>
                     </Link>
                   </Td>

@@ -2,8 +2,10 @@
 import * as React from "react";
 import Link from "next/link";
 import { Bar, BarChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
-import { Avatar, Badge, Card, CardContent, CardDescription, CardHeader, CardTitle, PageHeader, Stat, Table, Td, Th, Tr } from "@nfs/ui";
-import { ROLE_LABEL } from "@nfs/auth";
+import { Avatar, Badge, Button, Card, CardContent, CardDescription, CardHeader, CardTitle, PageHeader, Stat, Table, Td, Th, Tr } from "@nfs/ui";
+import { ROLE_LABEL, can } from "@nfs/auth";
+import { Pencil, UserCog } from "lucide-react";
+import { AssignmentDialog } from "./assignment-dialog";
 import { NFS_CONTROLLABLE, formatDate, rangeDays, type Person, type TeamPosition } from "@nfs/db";
 import { eligibleFor } from "@nfs/rules";
 import { useHub, personName } from "@/lib/store";
@@ -15,6 +17,8 @@ const POS: Record<TeamPosition, string> = { lead: "Lead", gate: "Gate", jetBridg
 
 export function PortfolioView({ p }: { p: Person }) {
   const hub = useHub();
+  const [editing, setEditing] = React.useState(false);
+  const manage = can(hub.session?.role, "roster.edit");
   const map = new Map(hub.ds.airlines.map((a) => [a.code, a]));
   const flightById = React.useMemo(() => new Map(hub.ds.flights.map((f) => [f.id, f])), [hub.ds]);
   const pf = buildPortfolio(p.id, hub.gateLogs, flightById);
@@ -37,9 +41,16 @@ export function PortfolioView({ p }: { p: Person }) {
             {p.trainedAirlines.filter((c) => c !== p.coreAirline).map((c) => <AirlineChip key={c} airline={map.get(c)!} />)}
           </span>
         }
-        actions={<Avatar name={personName(p)} tone="gold" className="size-14 text-base" />}
+        actions={
+          <div className="flex items-center gap-3">
+            {manage ? <Button variant="outline" onClick={() => setEditing(true)}><Pencil /> Edit assignment</Button> : null}
+            {hub.me?.id === p.id ? <Button variant="outline" asChild><Link href="/profile"><UserCog /> My profile</Link></Button> : null}
+            <Avatar name={personName(p)} src={p.photoUrl} tone="gold" className="size-14 text-base" />
+          </div>
+        }
       />
 
+      {editing ? <AssignmentDialog person={p} onClose={() => setEditing(false)} /> : null}
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
         <Stat label="Flights worked · 28 days" value={pf.flights.length} sub={`${pf.asLead} as lead`} />
         <Stat label="On-time (D0) on their flights" value={pf.flights.length ? pct(pf.d0) : "—"} tone={pf.d0 >= 85 ? "ok" : "warn"} />

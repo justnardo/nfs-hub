@@ -1,8 +1,10 @@
 "use client";
 import * as React from "react";
 import Link from "next/link";
-import { ArrowRight } from "lucide-react";
-import { Badge, Card, PageHeader, Progress } from "@nfs/ui";
+import { ArrowRight, Plus } from "lucide-react";
+import { can } from "@nfs/auth";
+import { AirlineDialog } from "@/components/airline-editor";
+import { Badge, Button, Card, PageHeader, Progress } from "@nfs/ui";
 import { addDays } from "@nfs/db";
 import { useHub } from "@/lib/store";
 import { RequirePerm } from "@/components/guard";
@@ -19,11 +21,18 @@ export default function AirlinesPage() {
 
 function Airlines() {
   const hub = useHub();
+  const [adding, setAdding] = React.useState(false);
   const map = new Map(hub.ds.airlines.map((a) => [a.code, a]));
   const since = addDays(hub.today, -14);
   return (
     <>
-      <PageHeader eyebrow="Airline profiles" title="Airlines above the wing" description="Each carrier's SLA minimums, training requirements, core team and station manager expectations. Airline-specific teams are the core unit." />
+      <PageHeader
+        eyebrow="Airline profiles"
+        title="Airlines above the wing"
+        description="Each carrier's SLA minimums, training requirements, core team and station manager expectations. Airline-specific teams are the core unit."
+        actions={can(hub.session?.role, "airlines.edit") ? <Button onClick={() => setAdding(true)}><Plus /> Add airline</Button> : null}
+      />
+      {adding ? <AirlineDialog onClose={() => setAdding(false)} /> : null}
       <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
         {hub.ds.airlines.map((a) => {
           const core = hub.ds.people.filter((p) => p.coreAirline === a.code);

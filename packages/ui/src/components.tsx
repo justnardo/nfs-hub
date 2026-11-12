@@ -171,9 +171,16 @@ export function Tr({ className, ...p }: React.HTMLAttributes<HTMLTableRowElement
 }
 
 /* ---------- Misc ---------- */
-export function Avatar({ name, className, tone = "brand" }: { name: string; className?: string; tone?: "brand" | "gold" | "dark" }) {
+export function Avatar({ name, className, tone = "brand", src }: { name: string; className?: string; tone?: "brand" | "gold" | "dark"; src?: string | null }) {
+  const [failed, setFailed] = React.useState(false);
   const initials = name.split(" ").map((s) => s[0]).slice(0, 2).join("");
   const tones = { brand: "bg-brand-100 text-brand-800", gold: "bg-gold-100 text-gold-700", dark: "bg-ink-800 text-white" };
+  if (src && !failed) {
+    return (
+      // eslint-disable-next-line @next/next/no-img-element
+      <img src={src} alt={name} onError={() => setFailed(true)} className={cn("inline-block size-8 shrink-0 rounded-full object-cover ring-1 ring-line", className)} />
+    );
+  }
   return <span className={cn("inline-flex size-8 shrink-0 items-center justify-center rounded-full text-[11px] font-bold", tones[tone], className)}>{initials}</span>;
 }
 

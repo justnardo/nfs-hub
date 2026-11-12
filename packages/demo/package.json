@@ -1,0 +1,23 @@
+{
+  "name": "@nfs/demo",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Deterministic fictional demo data for the NFS hub (staff, flights, rosters, gate logs).",
+  "main": "./src/index.ts",
+  "types": "./src/index.ts",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "seed:sql": "npx -y tsx ./scripts/write-seed-sql.ts",
+    "typecheck": "tsc --noEmit -p ."
+  },
+  "dependencies": {
+    "@nfs/db": "workspace:*",
+    "@nfs/rules": "workspace:*"
+  },
+  "devDependencies": {
+    "@nfs/config": "workspace:*",
+    "@types/node": "^22.10.0"
+  }
+}

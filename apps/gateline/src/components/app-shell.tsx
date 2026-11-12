@@ -3,7 +3,7 @@ import * as React from "react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import {
-  BarChart3, CalendarDays, ClipboardList, Grid3x3, LayoutDashboard, LogOut, MessageSquareWarning, Plane, PlaneTakeoff,
+  BarChart3, CalendarDays, ClipboardList, Grid3x3, KeyRound, LayoutDashboard, LogOut, MessageSquareWarning, Plane, PlaneTakeoff, Settings2, UserCog,
   RotateCcw, Smartphone, UserRound, Users, Wifi, WifiOff,
 } from "lucide-react";
 import { Avatar, Badge, Button, cn } from "@nfs/ui";
@@ -40,6 +40,14 @@ const NAV: { group: string; items: NavItem[] }[] = [
       { href: "/records", label: "Flight records", icon: ClipboardList, perm: "staff.view", mobile: true },
       { href: "/analytics", label: "Analytics", icon: BarChart3, perm: "analytics.view" },
       { href: "/feedback", label: "Airline feedback", icon: MessageSquareWarning, perm: "analytics.view" },
+    ],
+  },
+  {
+    group: "Account",
+    items: [
+      { href: "/profile", label: "My profile", icon: UserCog, mobile: true },
+      { href: "/settings", label: "Rule settings", icon: Settings2, perm: "roster.edit" },
+      { href: "/admin", label: "Accounts", icon: KeyRound, perm: "system.admin" },
     ],
   },
 ];
@@ -96,11 +104,13 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         </nav>
         <div className="border-t border-white/10 p-4">
           <div className="flex items-center gap-2.5">
-            <Avatar name={hub.session.name} tone="gold" />
-            <div className="min-w-0 flex-1">
-              <p className="truncate text-sm font-semibold">{hub.session.name}</p>
-              <p className="text-[11px] text-ink-400">{ROLE_LABEL[hub.session.role]}</p>
-            </div>
+            <Link href="/profile" className="flex min-w-0 flex-1 items-center gap-2.5 rounded-lg transition-colors hover:text-brand-200">
+              <Avatar name={hub.session.name} src={hub.me?.photoUrl} tone="gold" />
+              <div className="min-w-0 flex-1">
+                <p className="truncate text-sm font-semibold">{hub.session.name}</p>
+                <p className="text-[11px] text-ink-400">{ROLE_LABEL[hub.session.role]}</p>
+              </div>
+            </Link>
             <button
               onClick={() => {
                 signOut();
@@ -142,17 +152,9 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                 <RotateCcw />
               </Button>
             ) : null}
-            <button
-              className="lg:hidden"
-              onClick={() => {
-                signOut();
-                hub.refreshSession();
-                router.replace("/login");
-              }}
-              aria-label="Sign out"
-            >
-              <Avatar name={hub.session.name} tone="gold" />
-            </button>
+            <Link href="/profile" className="lg:hidden" aria-label="My profile">
+              <Avatar name={hub.session.name} src={hub.me?.photoUrl} tone="gold" />
+            </Link>
           </div>
         </header>
 

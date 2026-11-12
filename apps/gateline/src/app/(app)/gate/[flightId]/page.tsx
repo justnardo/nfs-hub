@@ -363,7 +363,7 @@ function TeamDialog({ open, onOpenChange, team, onSave, flightDate, airlineCode,
                   pos && "border-brand-500 bg-brand-50",
                 )}
               >
-                <Avatar name={personName(p)} tone={core ? "brand" : "gold"} />
+                <Avatar name={personName(p)} src={p.photoUrl} tone={core ? "brand" : "gold"} />
                 <div className="min-w-0 flex-1">
                   <p className="text-sm font-semibold">{personName(p)}</p>
                   <p className="text-xs text-muted">{!elig.ok ? elig.reason : core ? `Core ${airlineCode}` : `Core ${p.coreAirline ?? "float pool"} · qualified`}{p.role === "lead" ? " · Lead" : ""}</p>

@@ -1,12 +1,22 @@
 import type {
   Airline, DelayCause, Discrepancy, DiscrepancyType, FeedbackItem, Flight, GateEventType, GateLog,
   Person, Role, RosterEntry, ShiftCode, TeamMember, Terminal, TrainingRecord,
-} from "../types";
-import { AIRLINES, ROUTES } from "./airlines";
+} from "@nfs/db";
+import { AIRLINES, ROUTES, type RouteTemplate } from "./airlines";
+import { fairnessHistory, optimiseWeek, resolveRules, weekPatterns, type RuleSettings } from "@nfs/rules";
 import { FIRST_NAMES, LAST_NAMES } from "./names";
 import { rng } from "./prng";
-import { addDays, dayOfWeek, fromMinutes, rangeDays, toMinutes, weekStart } from "../time";
-import { shiftDemand, shiftForStd } from "../demand";
+import { addDays, dayOfWeek, fromMinutes, rangeDays, toMinutes, weekStart } from "@nfs/db";
+import { shiftDemand, shiftForStd } from "@nfs/db";
+
+/** Manager changes applied on top of the seed. */
+export interface DatasetConfig {
+  /** Effective airline list (seed airlines as edited, plus any added). */
+  airlines?: Airline[];
+  routes?: RouteTemplate[];
+  personPatch?: Record<string, Partial<Person>>;
+  rules?: RuleSettings;
+}
 
 export interface Dataset {
   today: string;
@@ -23,51 +33,15 @@ export interface Dataset {
 
 const TEAM_PLAN: { airline: string; leads: number; agents: number }[] = [
   { airline: "UA", leads: 3, agents: 13 },
-  { airline: "AC", leads: 2, agents: 10 },
+  { airline: "AC", leads: 3, agents: 10 },
   { airline: "WS", leads: 2, agents: 6 },
-  { airline: "BW", leads: 1, agents: 5 },
+  { airline: "BW", leads: 2, agents: 5 },
   { airline: "JY", leads: 2, agents: 6 },
-  { airline: "WU", leads: 2, agents: 7 },
 ];
 const FLOAT_POOL = 5;
 const SUPERVISORS: Terminal[] = ["US", "US", "INTL", "INTL"];
 
 const COURSES: Record<string, string[]> = Object.fromEntries(AIRLINES.map((a) => [a.code, a.requiredTraining]));
-
-/** Every valid Sun–Sat pattern: 2 consecutive days off inside the week, E before L in each block, ≤3 lates in a row. */
-export function validWeekPatterns(): ShiftCode[][] {
-  const out: ShiftCode[][] = [];
-  for (let off = 0; off <= 5; off++) {
-    for (let mask = 0; mask < 32; mask++) {
-      const p: ShiftCode[] = [];
-      let bit = 0;
-      for (let d = 0; d < 7; d++) {
-        if (d === off || d === off + 1) p.push("O");
-        else p.push(mask & (1 << bit++) ? "L" : "E");
-      }
-      let ok = true;
-      let lateRun = 0;
-      for (let d = 0; d < 7; d++) {
-        if (d > 0 && p[d - 1] === "L" && p[d] === "E") ok = false;
-        lateRun = p[d] === "L" ? lateRun + 1 : 0;
-        if (lateRun > 3) ok = false;
-      }
-      if (ok) out.push(p);
-    }
-  }
-  return out;
-}
-
-function boundaryOk(prev: ShiftCode[] | undefined, next: ShiftCode[]): boolean {
-  if (!prev) return true;
-  if (prev[6] === "L" && next[0] === "E") return false;
-  let run = 0;
-  for (const s of [...prev, ...next]) {
-    run = s === "L" ? run + 1 : 0;
-    if (run > 3) return false;
-  }
-  return true;
-}
 
 function makeName(r: ReturnType<typeof rng>, used: Set<string>) {
   for (let i = 0; i < 200; i++) {
@@ -90,18 +64,23 @@ function training(r: ReturnType<typeof rng>, airline: string, today: string, ris
   });
 }
 
-export function generateDataset(today: string, nowMinutes: number): Dataset {
+export function generateDataset(today: string, nowMinutes: number, config: DatasetConfig = {}): Dataset {
+  const airlines = config.airlines ?? AIRLINES;
+  const airlineBy = new Map(airlines.map((a) => [a.code, a]));
+  const routes = (config.routes ?? ROUTES).filter((r) => airlineBy.has(r.airline));
+  const rules = config.rules ?? resolveRules();
   const r = rng(`gateline-people-v1`);
   const used = new Set<string>();
   const people: Person[] = [];
   let staffNo = 4100;
 
-  const mkPerson = (role: Role, terminal: Terminal, core: string | null, trained: string[], hireYear: number): Person => {
+  const mkPerson = (role: Role, terminal: Terminal, core: string | null, trained: string[], hireYear: number, fixedNo?: number): Person => {
     const { f, l } = makeName(r, used);
     const t = trained.flatMap((a) => training(r, a, today, role === "agent" ? 0.07 : 0.03));
+    const no = fixedNo ?? staffNo;
     const p: Person = {
-      id: `p${staffNo}`,
-      staffNo: `NFS-${staffNo}`,
+      id: `p${no}`,
+      staffNo: `NFS-${no}`,
       firstName: f,
       lastName: l,
       role,
@@ -109,10 +88,10 @@ export function generateDataset(today: string, nowMinutes: number): Dataset {
       coreAirline: core,
       trainedAirlines: trained,
       training: t,
-      phone: `+1 242 555 ${String(1000 + (staffNo % 9000)).slice(-4)}`,
+      phone: `+1 242 555 ${String(1000 + (no % 9000)).slice(-4)}`,
       hireYear,
     };
-    staffNo++;
+    if (fixedNo === undefined) staffNo++;
     return p;
   };
 
@@ -135,13 +114,23 @@ export function generateDataset(today: string, nowMinutes: number): Dataset {
     const term: Terminal = trained.includes("UA") ? "US" : "INTL";
     people.push(mkPerson("agent", term, null, trained, r.int(2012, 2022)));
   }
-  for (const term of SUPERVISORS) {
+  // Fixed, memorable IDs for management accounts (stable when teams change)
+  SUPERVISORS.forEach((term, i) => {
     const trained = AIRLINES.filter((a) => a.terminal === term || r.chance(0.5)).map((a) => a.code);
-    people.push(mkPerson("supervisor", term, null, trained, r.int(2004, 2012)));
+    people.push(mkPerson("supervisor", term, null, trained, r.int(2004, 2012), 1011 + i));
+  });
+  people.push(mkPerson("manager", "INTL", null, AIRLINES.map((a) => a.code), 2003, 1001));
+  people.push(mkPerson("manager", "US", null, AIRLINES.map((a) => a.code), 2006, 1002));
+  people.push(mkPerson("admin", "INTL", null, [], 2015, 1000));
+
+  // Manager edits (team, role, terminal, qualifications) and self-service profile fields
+  for (const p of people) {
+    p.email = `${p.firstName}.${p.lastName}`.toLowerCase().replace(/[^a-z.]/g, "") + "@nfsbahamas.example";
+    p.active = true;
+    const patch = config.personPatch?.[p.id];
+    if (patch) Object.assign(p, patch);
+    if (p.coreAirline && !airlineBy.has(p.coreAirline)) p.coreAirline = null; // airline removed → float
   }
-  people.push(mkPerson("manager", "INTL", null, AIRLINES.map((a) => a.code), 2003));
-  people.push(mkPerson("manager", "US", null, AIRLINES.map((a) => a.code), 2006));
-  people.push(mkPerson("admin", "INTL", null, [], 2015));
 
   // ---------- Flights ----------
   const windowStart = addDays(weekStart(today), -14);
@@ -150,9 +139,9 @@ export function generateDataset(today: string, nowMinutes: number): Dataset {
   for (const date of windowDays) {
     const dow = dayOfWeek(date);
     const fr = rng(`flights-${date}`);
-    for (const route of ROUTES) {
+    for (const route of routes) {
       if (route.days && !route.days.includes(dow)) continue;
-      const airline = AIRLINES.find((a) => a.code === route.airline)!;
+      const airline = airlineBy.get(route.airline)!;
       flights.push({
         id: `${date}-${route.flightNo.replace(/\s/g, "")}`,
         date,
@@ -171,98 +160,72 @@ export function generateDataset(today: string, nowMinutes: number): Dataset {
   }
   flights.sort((a, b) => (a.date + a.std).localeCompare(b.date + b.std));
 
-  // ---------- Rosters ----------
-  const patterns = validWeekPatterns();
+  // ---------- Rosters (built by the engine's week optimiser) ----------
   const roster: RosterEntry[] = [];
   const weeks = [0, 7, 14, 21].map((n) => addDays(windowStart, n));
-  const lastWeek = new Map<string, ShiftCode[]>();
   const vr = rng("vacations-v1");
   const vacationWeek = new Map<string, string>();
   for (const p of people) {
     if (p.role === "agent" && vr.chance(0.06)) vacationWeek.set(p.id, vr.pick(weeks));
   }
+  const shiftOf = new Map<string, ShiftCode>();
+  const flightsByDate = new Map<string, Flight[]>();
+  for (const f of flights) flightsByDate.set(f.date, [...(flightsByDate.get(f.date) ?? []), f]);
+  const patterns = weekPatterns(rules);
 
-  const rosterTeam = (members: Person[], ws: string, reqRaw: (date: string, s: "E" | "L") => number) => {
+  const rosterTeam = (members: Person[], ws: string, demand: (date: string, s: "E" | "L") => number, label: string, countsFor?: (id: string, ws: string) => boolean) => {
+    if (!members.length) return;
     const days = rangeDays(ws, 7);
-    // demand is fixed for the week: compute once instead of per candidate pattern
-    const demand = new Map<string, number>();
-    for (const d of days) for (const sh of ["E", "L"] as const) demand.set(d + sh, reqRaw(d, sh));
-    const req = (d: string, sh: "E" | "L") => demand.get(d + sh) ?? 0;
-    const cur = days.map(() => ({ E: 0, L: 0 }));
-    const wr = rng(`roster-${ws}-${members.map((m) => m.id).join(",")}`);
-    const working = wr.shuffle(members).filter((m) => {
-      if (vacationWeek.get(m.id) !== ws) return true;
-      days.forEach((d) => roster.push({ personId: m.id, date: d, shift: "V" }));
-      lastWeek.set(m.id, ["O", "O", "O", "O", "O", "O", "O"]);
-      return false;
-    });
-    const chosen = new Map<string, ShiftCode[]>();
-    const apply = (p: ShiftCode[], sign: 1 | -1) =>
-      p.forEach((s, i) => {
-        if (s === "E" || s === "L") cur[i][s] += sign;
+    const prevDays = rangeDays(addDays(ws, -7), 7);
+    const histDays = rangeDays(windowStart, Math.max(0, Math.round((new Date(ws).getTime() - new Date(windowStart).getTime()) / 86400000)));
+    const demandCache = new Map<string, number>();
+    const plan = optimiseWeek(
+      {
+        members,
+        weekStart: ws,
+        demand: (d, sh) => {
+          const k = d + sh;
+          if (!demandCache.has(k)) demandCache.set(k, demand(d, sh));
+          return demandCache.get(k)!;
+        },
+        prevWeek: (id) => prevDays.map((d) => shiftOf.get(`${id}|${d}`)),
+        locked: (id) => (vacationWeek.get(id) === ws ? "V" : undefined),
+        counts: (id) => (countsFor ? countsFor(id, ws) : true),
+        history: (id) => fairnessHistory(id, histDays, (pid, d) => shiftOf.get(`${pid}|${d}`)),
+        rules,
+        seed: `${label}-${ws}`,
+      },
+      patterns,
+    );
+    for (const m of members) {
+      const p = plan.patterns.get(m.id)!;
+      p.forEach((sh, i) => {
+        roster.push({ personId: m.id, date: days[i], shift: sh });
+        shiftOf.set(`${m.id}|${days[i]}`, sh);
       });
-    const pickBest = (m: Person) => {
-      const prev = lastWeek.get(m.id);
-      let best: ShiftCode[] = patterns[0];
-      let bestScore = -Infinity;
-      for (const p of patterns) {
-        if (!boundaryOk(prev, p)) continue;
-        let score = wr.next() * 0.3;
-        if (prev && prev.join("") === p.join("")) score -= 3; // nobody fixed
-        p.forEach((s, i) => {
-          if (s === "O") return;
-          const need = req(days[i], s as "E" | "L");
-          const have = cur[i][s as "E" | "L"];
-          score += have < need ? 10 : 1 / (2 + have - need);
-        });
-        if (score > bestScore) {
-          bestScore = score;
-          best = p;
-        }
-      }
-      return best;
-    };
-    // greedy pass, then improvement passes (each person re-optimised against the rest of the team)
-    for (const m of working) {
-      const p = pickBest(m);
-      chosen.set(m.id, p);
-      apply(p, 1);
-    }
-    for (let pass = 0; pass < 8; pass++) {
-      for (const m of working) {
-        apply(chosen.get(m.id)!, -1);
-        const p = pickBest(m);
-        chosen.set(m.id, p);
-        apply(p, 1);
-      }
-    }
-    for (const m of working) {
-      const p = chosen.get(m.id)!;
-      p.forEach((s, i) => roster.push({ personId: m.id, date: days[i], shift: s }));
-      lastWeek.set(m.id, p);
     }
   };
 
-  const flightsByDate = new Map<string, Flight[]>();
-  for (const f of flights) flightsByDate.set(f.date, [...(flightsByDate.get(f.date) ?? []), f]);
-
+  const active = people.filter((p) => p.active !== false);
   for (const ws of weeks) {
-    for (const plan of TEAM_PLAN) {
-      const airline = AIRLINES.find((a) => a.code === plan.airline)!;
-      const agents = people.filter((p) => p.role === "agent" && p.coreAirline === plan.airline);
-      const leads = people.filter((p) => p.role === "lead" && p.coreAirline === plan.airline);
-      rosterTeam(agents, ws, (d, s) => shiftDemand(flightsByDate.get(d) ?? [], airline, s).agents);
-      rosterTeam(leads, ws, (d, s) => Math.min(1, shiftDemand(flightsByDate.get(d) ?? [], airline, s).leads));
+    for (const airline of airlines) {
+      const agents = active.filter((p) => p.role === "agent" && p.coreAirline === airline.code);
+      const leads = active.filter((p) => p.role === "lead" && p.coreAirline === airline.code);
+      const current = (id: string, w: string) => {
+        const p = agents.find((x) => x.id === id)!;
+        return airline.requiredTraining.every((c) => p.training.some((t) => t.airline === airline.code && t.course === c && t.expires >= w));
+      };
+      rosterTeam(agents, ws, (d, s) => shiftDemand(flightsByDate.get(d) ?? [], airline, s).agents, `${airline.code}-agents`, current);
+      rosterTeam(leads, ws, (d, s) => Math.min(1, shiftDemand(flightsByDate.get(d) ?? [], airline, s).leads), `${airline.code}-leads`);
     }
-    rosterTeam(people.filter((p) => p.role === "agent" && !p.coreAirline), ws, () => 1);
+    rosterTeam(active.filter((p) => p.role === "agent" && !p.coreAirline), ws, () => 1, "pool");
+    rosterTeam(active.filter((p) => p.role === "lead" && !p.coreAirline), ws, () => 1, "pool-leads");
     for (const term of ["US", "INTL"] as Terminal[]) {
-      rosterTeam(people.filter((p) => p.role === "supervisor" && p.homeTerminal === term), ws, () => 1);
+      rosterTeam(active.filter((p) => p.role === "supervisor" && p.homeTerminal === term), ws, () => 1, `sup-${term}`);
     }
   }
 
   // ---------- Gate logs (history + today up to now) ----------
-  const shiftOf = new Map<string, ShiftCode>();
-  for (const e of roster) shiftOf.set(`${e.personId}|${e.date}`, e.shift);
 
   const leadQuality = new Map<string, number>();
   const qr = rng("lead-quality");
@@ -298,16 +261,19 @@ export function generateDataset(today: string, nowMinutes: number): Dataset {
   const gateLogs: GateLog[] = [];
   for (const f of flights) {
     if (f.date > today) continue;
-    const airline = AIRLINES.find((a) => a.code === f.airline)!;
+    const airline = airlineBy.get(f.airline)!;
     const std = toMinutes(f.std);
     const isToday = f.date === today;
     if (isToday && nowMinutes < std - 75) continue; // not started yet
     const fr = rng(`log-${f.id}`);
     const shift = shiftForStd(f.std);
-    const onShift = (p: Person) => shiftOf.get(`${p.id}|${f.date}`) === shift;
+    const onShift = (p: Person) => {
+      const sh = shiftOf.get(`${p.id}|${f.date}`);
+      return sh === shift || sh === "M";
+    };
     const leads = people.filter((p) => p.role === "lead" && p.coreAirline === f.airline && onShift(p));
     const fallbackLeads = people.filter((p) => p.role === "lead" && p.trainedAirlines.includes(f.airline) && onShift(p));
-    const lead = leads[0] ?? fallbackLeads[0] ?? people.find((p) => p.role === "lead" && p.coreAirline === f.airline)!;
+    const lead = leads[0] ?? fallbackLeads[0] ?? people.find((p) => p.role === "lead" && p.coreAirline === f.airline) ?? people.find((p) => p.role === "supervisor")!;
     const agents = fr.shuffle(people.filter((p) => p.role === "agent" && p.coreAirline === f.airline && onShift(p)));
     const team: TeamMember[] = [{ personId: lead.id, position: "lead" }];
     let i = 0;
@@ -404,7 +370,7 @@ export function generateDataset(today: string, nowMinutes: number): Dataset {
   for (let k = 0; k < 26; k++) {
     const g = fbr.pick(filed);
     const praise = fbr.chance(g.delayMinutes > 14 ? 0.15 : 0.55);
-    const air = AIRLINES.find((a) => a.code === g.airline)!;
+    const air = airlineBy.get(g.airline)!;
     feedback.push({
       id: `fb${k}`,
       date: g.date,
@@ -419,5 +385,5 @@ export function generateDataset(today: string, nowMinutes: number): Dataset {
   }
   feedback.sort((a, b) => b.date.localeCompare(a.date));
 
-  return { today, nowMinutes, windowStart, windowDays, airlines: AIRLINES, people, flights, roster, gateLogs, feedback };
+  return { today, nowMinutes, windowStart, windowDays, airlines, people, flights, roster, gateLogs, feedback };
 }

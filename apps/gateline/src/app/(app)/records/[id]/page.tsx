@@ -96,7 +96,7 @@ function Record() {
                   const roles = log.team.filter((t) => t.personId === pid).map((t) => t.position);
                   return (
                     <div key={pid} className="flex items-center gap-2 text-sm">
-                      <Avatar name={personName(hub.people.get(pid))} className="size-7" tone={roles.includes("lead") ? "dark" : "brand"} />
+                      <Avatar name={personName(hub.people.get(pid))} src={hub.people.get(pid)?.photoUrl} className="size-7" tone={roles.includes("lead") ? "dark" : "brand"} />
                       <span className="flex-1">{personName(hub.people.get(pid))}</span>
                       <span className="flex gap-1">{roles.map((r) => <Badge key={r}>{POS[r]}</Badge>)}</span>
                     </div>
