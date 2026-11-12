@@ -63,7 +63,7 @@ export default function ProfilePage() {
         actions={<Button variant="outline" onClick={() => { signOut(); hub.refreshSession(); router.replace("/login"); }}><LogOut /> Sign out</Button>}
       />
 
-      <div className="grid gap-5 md:grid-cols-[240px_1fr]">
+      <div className="grid gap-5 @2xl/main:grid-cols-[240px_1fr]">
         <Card className="p-5 text-center">
           <div className="relative mx-auto w-fit">
             <Avatar name={personName(me)} src={me.photoUrl} tone="gold" className="size-32 text-3xl" />

@@ -7,6 +7,7 @@ import { useRouter } from "next/navigation";
 import { can } from "@nfs/auth";
 import type { RouteTemplate } from "@nfs/demo";
 import { AirlineDialog, RouteDialog } from "@/components/airline-editor";
+import { Pagination, usePaged } from "@/components/pagination";
 import { Avatar, Badge, Button, Card, CardContent, CardDescription, CardHeader, CardTitle, PageHeader, Stat, Table, Td, Th, Tr } from "@nfs/ui";
 import { addDays, formatDate } from "@nfs/db";
 import { eligibleFor, expiringSoon } from "@nfs/rules";
@@ -31,13 +32,14 @@ function AirlineProfile() {
   const [route, setRoute] = React.useState<RouteTemplate | "new" | null>(null);
   const [confirmRemove, setConfirmRemove] = React.useState(false);
   const a = hub.ds.airlines.find((x) => x.code === code);
+  const core = hub.ds.people.filter((p) => a && p.coreAirline === a.code).sort((x, y) => (x.role === y.role ? x.lastName.localeCompare(y.lastName) : x.role === "lead" ? -1 : 1));
+  const corePage = usePaged(core, 10, code);
   if (!a) return <p className="text-sm text-muted">Airline not found.</p>;
   const manage = can(hub.session?.role, "airlines.edit");
   const map = new Map(hub.ds.airlines.map((x) => [x.code, x]));
   const since = addDays(hub.today, -21);
   const logs = hub.gateLogs.filter((g) => g.airline === a.code && g.date >= since);
   const s = summarise(logs, map);
-  const core = hub.ds.people.filter((p) => p.coreAirline === a.code).sort((x, y) => (x.role === y.role ? x.lastName.localeCompare(y.lastName) : x.role === "lead" ? -1 : 1));
   const backup = hub.ds.people.filter((p) => p.coreAirline !== a.code && p.trainedAirlines.includes(a.code) && (p.role === "agent" || p.role === "lead"));
   const fb = hub.feedback.filter((f) => f.airline === a.code).slice(0, 5);
   const routes = hub.routes.filter((r) => r.airline === a.code).sort((x, y) => x.std.localeCompare(y.std));
@@ -70,34 +72,35 @@ function AirlineProfile() {
       />
       {editing ? <AirlineDialog airline={a} onClose={() => setEditing(false)} /> : null}
       {route ? <RouteDialog airline={a} route={route === "new" ? undefined : route} onClose={() => setRoute(null)} /> : null}
-      <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+      <div className="grid grid-cols-2 gap-3 @3xl/main:grid-cols-4">
         <Stat label="On-time D0 · 21 days" value={pct(s.d0)} tone={s.d0 >= 85 ? "ok" : "warn"} sub={`${s.flights} flights`} />
         <Stat label="D15" value={pct(s.d15)} />
         <Stat label="Team met SLA" value={pct(s.slaCompliance)} tone={s.slaCompliance >= 90 ? "ok" : "warn"} />
         <Stat label="NFS-caused delays" value={s.nfsDelays} sub={`${s.otherDelays} delays from other causes`} tone={s.nfsDelays ? "warn" : "ok"} />
       </div>
 
-      <div className="mt-5 grid gap-5 xl:grid-cols-[1fr_340px]">
+      <div className="mt-5 grid gap-5 @5xl/main:grid-cols-[1fr_340px]">
         <Card>
           <CardHeader><div><CardTitle>Core team</CardTitle><CardDescription>Protected — moving these staff off {a.code} needs a manager when it breaks SLA</CardDescription></div></CardHeader>
           <CardContent className="px-2 sm:px-5">
             <Table>
-              <thead><tr><Th>Name</Th><Th>Role</Th><Th>Also qualified</Th><Th>Training</Th></tr></thead>
+              <thead><tr><Th>Name</Th><Th>Role</Th><Th className="hidden @lg/tbl:table-cell">Also qualified</Th><Th>Training</Th></tr></thead>
               <tbody>
-                {core.map((p) => {
+                {corePage.rows.map((p) => {
                   const e = eligibleFor(p, a, hub.today);
                   const soon = expiringSoon(p, hub.today).filter((t) => t.airline === a.code);
                   return (
                     <Tr key={p.id}>
                       <Td><div className="flex items-center gap-2"><Avatar name={personName(p)} src={p.photoUrl} tone={p.role === "lead" ? "dark" : "brand"} className="size-7" /><PersonLink p={p} /></div></Td>
                       <Td className="capitalize">{p.role}</Td>
-                      <Td><div className="flex flex-wrap gap-1">{p.trainedAirlines.filter((c) => c !== a.code).map((c) => <AirlineChip key={c} airline={map.get(c)!} />)}</div></Td>
+                      <Td className="hidden @lg/tbl:table-cell"><div className="flex flex-wrap gap-1">{p.trainedAirlines.filter((c) => c !== a.code).map((c) => <AirlineChip key={c} airline={map.get(c)!} />)}</div></Td>
                       <Td>{!e.ok ? <Badge tone="bad">{e.reason}</Badge> : soon.length ? <Badge tone="warn">Expires {formatDate(soon[0].expires, { day: "numeric", month: "short" })}</Badge> : <Badge tone="ok">Current</Badge>}</Td>
                     </Tr>
                   );
                 })}
               </tbody>
             </Table>
+            <Pagination paged={corePage} noun="staff" sizes={[10, 25]} className="mx-1 mt-1" />
           </CardContent>
         </Card>
 
@@ -129,7 +132,7 @@ function AirlineProfile() {
         </div>
       </div>
 
-      <div className="mt-5 grid gap-5 lg:grid-cols-2">
+      <div className="mt-5 grid gap-5 @3xl/main:grid-cols-2">
         <Card>
           <CardHeader>
             <div><CardTitle>Flight schedule</CardTitle><CardDescription>Feeds SLA demand for rosters and coverage</CardDescription></div>
@@ -138,15 +141,15 @@ function AirlineProfile() {
           <CardContent className="px-2 sm:px-5">
             {routes.length === 0 ? <p className="px-2 text-sm text-muted">No departures scheduled yet{manage ? " — add the first one" : ""}.</p> : null}
             <Table>
-              <thead><tr><Th>Flight</Th><Th>To</Th><Th>STD</Th><Th>Days</Th><Th>Aircraft</Th><Th>Gate</Th>{manage ? <Th /> : null}</tr></thead>
+              <thead><tr><Th>Flight</Th><Th>To</Th><Th>STD</Th><Th className="hidden @lg/tbl:table-cell">Days</Th><Th className="hidden @lg/tbl:table-cell">Aircraft</Th><Th>Gate</Th>{manage ? <Th /> : null}</tr></thead>
               <tbody>
                 {routes.map((r) => (
                   <Tr key={r.flightNo}>
                     <Td className="font-semibold">{r.flightNo}</Td>
                     <Td>{r.destName} <span className="text-xs text-muted">{r.dest}</span></Td>
                     <Td className="tabular">{r.std}</Td>
-                    <Td className="text-xs">{r.days ? r.days.map((d) => DOW[d]).join(" ") : "Daily"}</Td>
-                    <Td>{r.aircraft}</Td>
+                    <Td className="hidden @lg/tbl:table-cell text-xs">{r.days ? r.days.map((d) => DOW[d]).join(" ") : "Daily"}</Td>
+                    <Td className="hidden @lg/tbl:table-cell">{r.aircraft}</Td>
                     <Td>{r.gate}</Td>
                     {manage ? <Td><Button variant="ghost" size="icon" onClick={() => setRoute(r)} aria-label={`Edit ${r.flightNo}`}><Pencil /></Button></Td> : null}
                   </Tr>

@@ -134,7 +134,7 @@ function Rosters() {
         }
       />
 
-      <div className="grid gap-5 xl:grid-cols-[1fr_340px]">
+      <div className="grid gap-5 @5xl/main:grid-cols-[1fr_340px]">
         <div className="min-w-0 space-y-5">
           <Card>
             <CardHeader>

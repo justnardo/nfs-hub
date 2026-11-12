@@ -33,7 +33,7 @@ function Airlines() {
         actions={can(hub.session?.role, "airlines.edit") ? <Button onClick={() => setAdding(true)}><Plus /> Add airline</Button> : null}
       />
       {adding ? <AirlineDialog onClose={() => setAdding(false)} /> : null}
-      <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+      <div className="grid gap-4 @2xl/main:grid-cols-2 @5xl/main:grid-cols-3">
         {hub.ds.airlines.map((a) => {
           const core = hub.ds.people.filter((p) => p.coreAirline === a.code);
           const backup = hub.ds.people.filter((p) => p.coreAirline !== a.code && p.trainedAirlines.includes(a.code) && (p.role === "agent" || p.role === "lead"));

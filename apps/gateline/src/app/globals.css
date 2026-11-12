@@ -7,3 +7,11 @@
   body { background: white; }
   .print-full { margin: 0 !important; padding: 0 !important; max-width: none !important; }
 }
+
+/* Grid children may shrink below their content (wide tables scroll inside their card instead of pushing the page). */
+.app-main .grid > * { min-width: 0; }
+
+/* Quiet scrollbars in the sidebar */
+.nav-scroll { scrollbar-width: thin; scrollbar-color: rgb(255 255 255 / 0.14) transparent; }
+.nav-scroll::-webkit-scrollbar { width: 6px; }
+.nav-scroll::-webkit-scrollbar-thumb { background: rgb(255 255 255 / 0.14); border-radius: 9999px; }

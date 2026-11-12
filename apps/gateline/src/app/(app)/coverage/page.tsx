@@ -45,7 +45,7 @@ export default function CoveragePage() {
           </div>
         }
       />
-      <div className="mb-5 grid grid-cols-2 gap-3 md:grid-cols-4">
+      <div className="mb-5 grid grid-cols-2 gap-3 @2xl/main:grid-cols-4">
         <Stat label="Shifts at SLA" value={count("green")} tone="ok" sub={`of ${active.length} operating shifts`} />
         <Stat label="Short (amber)" value={count("amber")} tone="warn" sub="within 25% or no lead" />
         <Stat label="Critical (red)" value={count("red")} tone="bad" sub="below 75% of SLA" />
@@ -65,7 +65,7 @@ export default function CoveragePage() {
         </CardContent>
       </Card>
 
-      <div className="mt-5 grid gap-5 lg:grid-cols-2">
+      <div className="mt-5 grid gap-5 @3xl/main:grid-cols-2">
         <Card>
           <CardHeader><div><CardTitle>Next gaps to fix</CardTitle><CardDescription>From today forward, in time order</CardDescription></div></CardHeader>
           <CardContent className="space-y-1.5">

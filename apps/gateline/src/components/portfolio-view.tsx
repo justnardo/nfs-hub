@@ -51,14 +51,14 @@ export function PortfolioView({ p }: { p: Person }) {
       />
 
       {editing ? <AssignmentDialog person={p} onClose={() => setEditing(false)} /> : null}
-      <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+      <div className="grid grid-cols-2 gap-3 @3xl/main:grid-cols-4">
         <Stat label="Flights worked · 28 days" value={pf.flights.length} sub={`${pf.asLead} as lead`} />
         <Stat label="On-time (D0) on their flights" value={pf.flights.length ? pct(pf.d0) : "—"} tone={pf.d0 >= 85 ? "ok" : "warn"} />
         <Stat label="Delays on their flights" value={totalDelays} sub={totalDelays ? `${nfsDelays} NFS-related · ${totalDelays - nfsDelays} other causes` : "none"} tone={nfsDelays ? "warn" : "ok"} />
         <Stat label="Discrepancies handled" value={pf.discrepancies} />
       </div>
 
-      <div className="mt-5 grid gap-5 lg:grid-cols-3">
+      <div className="mt-5 grid gap-5 @3xl/main:grid-cols-3">
         <Card>
           <CardHeader><div><CardTitle>Airlines worked</CardTitle></div></CardHeader>
           <CardContent className="h-44">
@@ -91,7 +91,7 @@ export function PortfolioView({ p }: { p: Person }) {
         </Card>
       </div>
 
-      <div className="mt-5 grid gap-5 xl:grid-cols-[1fr_360px]">
+      <div className="mt-5 grid gap-5 @5xl/main:grid-cols-[1fr_360px]">
         <Card>
           <CardHeader><div><CardTitle>Assignment history</CardTitle><CardDescription>Every filed flight, with outcome and recorded cause</CardDescription></div></CardHeader>
           <CardContent className="px-2 sm:px-5">

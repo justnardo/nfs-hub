@@ -25,7 +25,7 @@ function Accounts() {
   return (
     <>
       <PageHeader eyebrow="Super Admin" title="Accounts" description="Password requests from staff and an overview of accounts. Roles and teams are changed from each person's profile." />
-      <div className="mb-5 grid grid-cols-2 gap-3 md:grid-cols-5">
+      <div className="mb-5 grid grid-cols-2 gap-3 @2xl/main:grid-cols-5">
         {counts.map(([r, n]) => (
           <Card key={r} className="p-4">
             <p className="text-xs font-semibold text-muted">{ROLE_LABEL[r]}s</p>

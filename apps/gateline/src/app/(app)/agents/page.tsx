@@ -1,6 +1,7 @@
 "use client";
 import * as React from "react";
 import Link from "next/link";
+import { Pagination, usePaged } from "@/components/pagination";
 import { Search } from "lucide-react";
 import { Avatar, Badge, Card, Input, PageHeader, Select, Table, Td, Th, Tr } from "@nfs/ui";
 import { ROLE_LABEL } from "@nfs/auth";
@@ -36,6 +37,8 @@ function Agents() {
     .filter((p) => !term || p.homeTerminal === term)
     .filter((p) => !q || `${personName(p)} ${p.staffNo}`.toLowerCase().includes(q.toLowerCase()))
     .sort((a, b) => a.lastName.localeCompare(b.lastName));
+  const paged = usePaged(rows, 15, [q, role, airline, term]);
+  const top = React.useRef<HTMLDivElement>(null);
 
   return (
     <>
@@ -62,13 +65,14 @@ function Agents() {
           <option value="INTL">International</option>
         </Select>
       </Card>
-      <Card className="px-2 sm:px-4">
+      <div ref={top} className="scroll-mt-20" />
+      <Card className="px-2 pb-3 sm:px-4">
         <Table>
           <thead>
-            <tr><Th>Name</Th><Th>Role</Th><Th>Core</Th><Th>Trained on</Th><Th>Terminal</Th><Th>Flights · 28d</Th><Th>On-time</Th><Th>Training</Th></tr>
+            <tr><Th>Name</Th><Th className="hidden @4xl/main:table-cell">Role</Th><Th>Core</Th><Th className="hidden @5xl/main:table-cell">Trained on</Th><Th className="hidden @4xl/main:table-cell">Terminal</Th><Th>Flights · 28d</Th><Th>On-time</Th><Th>Training</Th></tr>
           </thead>
           <tbody>
-            {rows.map((p) => {
+            {paged.rows.map((p) => {
               const pf = buildPortfolio(p.id, hub.gateLogs, flightById);
               const expired = p.trainedAirlines.some((c) => !eligibleFor(p, map.get(c)!, hub.today).ok);
               const soon = expiringSoon(p, hub.today).length > 0;
@@ -80,10 +84,10 @@ function Agents() {
                       <span><span className="block font-semibold">{personName(p)}</span><span className="text-[11px] text-muted">{p.staffNo}</span></span>
                     </Link>
                   </Td>
-                  <Td>{ROLE_LABEL[p.role]}</Td>
+                  <Td className="hidden @4xl/main:table-cell">{ROLE_LABEL[p.role]}</Td>
                   <Td>{p.coreAirline ? <AirlineChip airline={map.get(p.coreAirline)!} /> : <Badge tone="brand">Float</Badge>}</Td>
-                  <Td><div className="flex flex-wrap gap-1">{p.trainedAirlines.map((c) => <AirlineChip key={c} airline={map.get(c)!} />)}</div></Td>
-                  <Td>{p.homeTerminal === "US" ? "US" : "Intl"}</Td>
+                  <Td className="hidden @5xl/main:table-cell"><div className="flex flex-wrap gap-1">{p.trainedAirlines.map((c) => <AirlineChip key={c} airline={map.get(c)!} />)}</div></Td>
+                  <Td className="hidden @4xl/main:table-cell">{p.homeTerminal === "US" ? "US" : "Intl"}</Td>
                   <Td className="tabular">{pf.flights.length}</Td>
                   <Td className="tabular">{pf.flights.length ? pct(pf.d0) : "—"}</Td>
                   <Td>{expired ? <Badge tone="bad">Expired</Badge> : soon ? <Badge tone="warn">Due soon</Badge> : <Badge tone="ok">Current</Badge>}</Td>
@@ -92,6 +96,7 @@ function Agents() {
             })}
           </tbody>
         </Table>
+        <Pagination paged={paged} noun="staff" scrollTo={top} sizes={[15, 30, 60]} className="mx-1 mt-1" />
       </Card>
     </>
   );

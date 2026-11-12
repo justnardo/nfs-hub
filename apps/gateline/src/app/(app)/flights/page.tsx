@@ -53,21 +53,21 @@ function Flights() {
             <CardHeader><div><CardTitle>{t === "US" ? "US Departures Terminal" : "International Terminal"}</CardTitle><CardDescription>{list.length} departures</CardDescription></div></CardHeader>
             <CardContent className="px-2 sm:px-5">
               <Table>
-                <thead><tr><Th>Flight</Th><Th>Destination</Th><Th>Aircraft</Th><Th>Inbound STA</Th><Th>STD</Th><Th>Gate</Th><Th>Lead</Th><Th>Pax</Th><Th>Status</Th></tr></thead>
+                <thead><tr><Th>Flight</Th><Th>Destination</Th><Th className="hidden @5xl/main:table-cell">Aircraft</Th><Th className="hidden @4xl/main:table-cell">Inbound STA</Th><Th>STD</Th><Th>Gate</Th><Th className="hidden @4xl/main:table-cell">Lead</Th><Th className="hidden @5xl/main:table-cell">Pax</Th><Th>Status</Th></tr></thead>
                 <tbody>
                   {list.map((f) => {
                     const log = hub.logByFlight.get(f.id);
                     const s = deriveStatus(f, log, hub.today, hub.nowMin);
                     return (
                       <Tr key={f.id}>
-                        <Td><Link href={log?.status === "filed" ? `/records/${log.id}` : `/gate/${f.id}`} className="flex items-center gap-2 font-semibold transition-colors hover:text-brand-600"><AirlineChip airline={map.get(f.airline)!} />{f.flightNo}</Link></Td>
+                        <Td><Link href={log?.status === "filed" ? `/records/${log.id}` : `/gate/${f.id}`} className="flex items-center gap-2 whitespace-nowrap font-semibold transition-colors hover:text-brand-600"><AirlineChip airline={map.get(f.airline)!} />{f.flightNo}</Link></Td>
                         <Td>{f.destinationName} <span className="text-xs text-muted">{f.destination}</span></Td>
-                        <Td className="text-xs">{f.aircraft}</Td>
-                        <Td className="tabular">{log?.events.door_open ? <span title="Door open logged">{f.sta} <span className="text-xs text-muted">· door {log.events.door_open}</span></span> : f.sta}</Td>
+                        <Td className="hidden @5xl/main:table-cell text-xs">{f.aircraft}</Td>
+                        <Td className="hidden @4xl/main:table-cell tabular">{log?.events.door_open ? <span title="Door open logged">{f.sta} <span className="text-xs text-muted">· door {log.events.door_open}</span></span> : f.sta}</Td>
                         <Td className="tabular font-semibold">{f.std}</Td>
                         <Td className="tabular">{f.gate}</Td>
-                        <Td className="text-xs">{log ? <PersonLink p={hub.people.get(log.leadId)} /> : "—"}</Td>
-                        <Td className="tabular text-xs">{log?.paxBoarded ?? "—"}/{f.paxBooked}</Td>
+                        <Td className="hidden @4xl/main:table-cell text-xs">{log ? <PersonLink p={hub.people.get(log.leadId)} /> : "—"}</Td>
+                        <Td className="hidden @5xl/main:table-cell tabular text-xs">{log?.paxBoarded ?? "—"}/{f.paxBooked}</Td>
                         <Td><div className="flex items-center gap-1.5"><FlightStatusBadge status={s.status} />{log && log.delayMinutes > 0 ? <span className="text-[11px] font-semibold text-bad">+{log.delayMinutes}m</span> : null}</div></Td>
                       </Tr>
                     );

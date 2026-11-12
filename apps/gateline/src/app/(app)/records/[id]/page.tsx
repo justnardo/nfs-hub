@@ -69,7 +69,7 @@ function Record() {
           </div>
         </div>
 
-        <div className="grid gap-6 p-6 md:grid-cols-2">
+        <div className="grid gap-6 p-6 @2xl/main:grid-cols-2">
           <div>
             <h3 className="mb-3 text-sm font-semibold">Timeline <span className="font-normal text-muted">· STD {f.std}</span></h3>
             <ol className="relative space-y-3 border-l-2 border-line pl-5">

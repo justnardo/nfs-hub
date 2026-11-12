@@ -155,7 +155,7 @@ export function DialogContent({ className, children, title, description, ...p }:
 /* ---------- Table ---------- */
 export function Table({ className, ...p }: React.TableHTMLAttributes<HTMLTableElement>) {
   return (
-    <div className="w-full overflow-x-auto">
+    <div className="@container/tbl w-full overflow-x-auto">
       <table className={cn("w-full text-sm", className)} {...p} />
     </div>
   );
@@ -219,13 +219,13 @@ export function EmptyState({ title, body, action }: { title: string; body?: stri
 
 export function PageHeader({ title, description, actions, eyebrow }: { title: string; description?: React.ReactNode; actions?: React.ReactNode; eyebrow?: React.ReactNode }) {
   return (
-    <div className="mb-6 flex flex-col gap-3 md:flex-row md:items-end md:justify-between">
-      <div>
+    <div className="mb-6 flex flex-wrap items-end justify-between gap-x-6 gap-y-3">
+      <div className="min-w-0 max-w-2xl flex-[1_1_28rem]">
         {eyebrow ? <p className="text-[11px] font-bold uppercase tracking-[0.14em] text-brand-600">{eyebrow}</p> : null}
         <h1 className="mt-1 text-2xl font-semibold md:text-[28px]">{title}</h1>
-        {description ? <p className="mt-1 max-w-2xl text-sm text-muted">{description}</p> : null}
+        {description ? <p className="mt-1 text-sm text-muted">{description}</p> : null}
       </div>
-      {actions ? <div className="flex flex-wrap items-center gap-2">{actions}</div> : null}
+      {actions ? <div className="flex min-w-0 flex-wrap items-center gap-2">{actions}</div> : null}
     </div>
   );
 }

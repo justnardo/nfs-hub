@@ -71,7 +71,7 @@ export function CoverageHeatmap({ cells, days, onCell, compact = false }: { cell
   const get = (a: string, d: string, s: "E" | "L") => cells.find((c) => c.airline === a && c.date === d && c.shift === s);
   return (
     <div className="overflow-x-auto">
-      <table className="w-full border-separate border-spacing-1">
+      <table className="w-full border-separate border-spacing-[3px]">
         <thead>
           <tr>
             <th className="w-36 text-left text-[11px] font-semibold uppercase tracking-wide text-muted">Airline</th>

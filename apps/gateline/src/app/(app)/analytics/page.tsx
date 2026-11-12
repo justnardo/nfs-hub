@@ -8,6 +8,7 @@ import { useHub, personName } from "@/lib/store";
 import { RequirePerm } from "@/components/guard";
 import { AirlineChip } from "@/components/ops";
 import { NfsWordmark } from "@/components/brand";
+import { Pagination, usePaged } from "@/components/pagination";
 import { isNfsCause, otpTone, pct, slaMet, summarise } from "@/lib/metrics";
 
 // Validated pair (scripts/validate_palette.js): teal slot 1, violet slot 2.
@@ -64,6 +65,7 @@ function Analytics() {
     })
     .filter((r) => r.flights > 0)
     .sort((a, b) => b.d0 - a.d0 || b.flights - a.flights);
+  const leadPage = usePaged(leads, 8, [days, terminal]);
 
   const delta = (a: number, b: number) => {
     const d = Math.round(a - b);
@@ -94,7 +96,7 @@ function Analytics() {
         }
       />
 
-      <div className="grid grid-cols-2 gap-3 lg:grid-cols-5">
+      <div className="grid grid-cols-2 gap-3 @xl/main:grid-cols-3 @4xl/main:grid-cols-5">
         <Stat label="On-time departure (D0)" value={pct(s.d0)} tone={otpTone(s.d0)} sub={delta(s.d0, prev.d0)} />
         <Stat label="Within 15 min (D15)" value={pct(s.d15)} tone={otpTone(s.d15)} sub={delta(s.d15, prev.d15)} />
         <Stat label="Team met SLA" value={pct(s.slaCompliance)} tone={s.slaCompliance >= 90 ? "ok" : "warn"} sub={delta(s.slaCompliance, prev.slaCompliance)} />
@@ -102,7 +104,7 @@ function Analytics() {
         <Stat label="Delays caused by NFS" value={`${s.nfsDelays}`} tone={s.nfsDelays ? "warn" : "ok"} sub={`of ${s.nfsDelays + s.otherDelays} delays · rest outside NFS control`} />
       </div>
 
-      <div className="mt-5 grid gap-5 xl:grid-cols-[1.4fr_1fr]">
+      <div className="mt-5 grid gap-5 @5xl/main:grid-cols-[1.4fr_1fr]">
         <Card>
           <CardHeader><div><CardTitle>On-time trend</CardTitle><CardDescription>Share of departures pushed back on time (D0) and within 15 minutes (D15), by day</CardDescription></div></CardHeader>
           <CardContent className="h-72">
@@ -138,7 +140,7 @@ function Analytics() {
         </Card>
       </div>
 
-      <div className="mt-5 grid gap-5 lg:grid-cols-2">
+      <div className="mt-5 grid gap-5 @3xl/main:grid-cols-2">
         <Card>
           <CardHeader><div><CardTitle>On-time (D0) by airline</CardTitle><CardDescription>Ranked · one colour, the label carries the airline</CardDescription></div></CardHeader>
           <CardContent className="h-64">
@@ -157,7 +159,7 @@ function Analytics() {
           <CardHeader><div><CardTitle>Airline scorecard</CardTitle><CardDescription>Table view of the period</CardDescription></div></CardHeader>
           <CardContent className="px-2 sm:px-5">
             <Table>
-              <thead><tr><Th>Airline</Th><Th>Flights</Th><Th>D0</Th><Th>SLA met</Th><Th>Boarding</Th><Th>Issues /100</Th></tr></thead>
+              <thead><tr><Th>Airline</Th><Th>Flights</Th><Th>D0</Th><Th>SLA met</Th><Th className="hidden @xl/tbl:table-cell">Boarding</Th><Th className="hidden @xl/tbl:table-cell">Issues /100</Th></tr></thead>
               <tbody>
                 {byAirline.map((r) => (
                   <Tr key={r.code}>
@@ -165,8 +167,8 @@ function Analytics() {
                     <Td className="tabular">{r.flights}</Td>
                     <Td><Badge tone={otpTone(r.d0)}>{r.d0}%</Badge></Td>
                     <Td><Badge tone={r.sla >= 90 ? "ok" : r.sla >= 75 ? "warn" : "bad"}>{r.sla}%</Badge></Td>
-                    <Td className="tabular">{r.board} min</Td>
-                    <Td className="tabular">{Math.round(r.disc)}</Td>
+                    <Td className="hidden @xl/tbl:table-cell tabular">{r.board} min</Td>
+                    <Td className="hidden @xl/tbl:table-cell tabular">{Math.round(r.disc)}</Td>
                   </Tr>
                 ))}
               </tbody>
@@ -179,21 +181,22 @@ function Analytics() {
         <CardHeader><div><CardTitle>Lead performance</CardTitle><CardDescription>Flights led in the period. Delays are split by recorded cause so leads aren't marked down for late inbounds or weather.</CardDescription></div></CardHeader>
         <CardContent className="px-2 sm:px-5">
           <Table>
-            <thead><tr><Th>Lead</Th><Th>Core</Th><Th>Flights led</Th><Th>On-time D0</Th><Th>Team met SLA</Th><Th>NFS-caused delays</Th><Th>Other delays</Th></tr></thead>
+            <thead><tr><Th>Lead</Th><Th className="hidden @4xl/main:table-cell">Core</Th><Th>Flights led</Th><Th>On-time D0</Th><Th>Team met SLA</Th><Th>NFS-caused delays</Th><Th className="hidden @4xl/main:table-cell">Other delays</Th></tr></thead>
             <tbody>
-              {leads.map((r) => (
+              {leadPage.rows.map((r) => (
                 <Tr key={r.p.id}>
                   <Td className="font-semibold">{personName(r.p)}</Td>
-                  <Td>{r.p.coreAirline ? <AirlineChip airline={airlines.get(r.p.coreAirline)!} /> : "—"}</Td>
+                  <Td className="hidden @4xl/main:table-cell">{r.p.coreAirline ? <AirlineChip airline={airlines.get(r.p.coreAirline)!} /> : "—"}</Td>
                   <Td className="tabular">{r.flights}</Td>
                   <Td><span className={cn("font-semibold tabular", r.d0 >= 85 ? "text-ok" : r.d0 >= 70 ? "text-warn" : "text-bad")}>{pct(r.d0)}</span></Td>
                   <Td className="tabular">{pct(r.sla)}</Td>
                   <Td className="tabular">{r.nfs}</Td>
-                  <Td className="tabular text-muted">{r.other}</Td>
+                  <Td className="hidden @4xl/main:table-cell tabular text-muted">{r.other}</Td>
                 </Tr>
               ))}
             </tbody>
           </Table>
+          <Pagination paged={leadPage} noun="leads" sizes={[8, 16]} className="mx-1 mt-1" />
         </CardContent>
       </Card>
       <p className="mt-4 text-[11px] text-muted">SLA compliance compares the logged team on each flight to the airline's minimums ({logs.filter((l) => !slaMet(l, airlines.get(l.airline)!)).length} flights short in the period). SLA figures are placeholders until NFS confirms them.</p>

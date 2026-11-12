@@ -123,7 +123,7 @@ function Period() {
         </div>
       ) : null}
 
-      <div className="grid gap-5 xl:grid-cols-[1fr_320px]">
+      <div className="grid gap-5 @5xl/main:grid-cols-[1fr_320px]">
         <Card className="min-w-0">
           <CardHeader>
             <div>

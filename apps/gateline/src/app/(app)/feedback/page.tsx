@@ -1,6 +1,7 @@
 "use client";
 import * as React from "react";
 import Link from "next/link";
+import { Pagination, usePaged } from "@/components/pagination";
 import { ThumbsDown, ThumbsUp } from "lucide-react";
 import { Badge, Button, Card, PageHeader, Select, Stat, cn } from "@nfs/ui";
 import { can } from "@nfs/auth";
@@ -24,6 +25,8 @@ function Feedback() {
   const map = new Map(hub.ds.airlines.map((a) => [a.code, a]));
   const items = hub.feedback.filter((f) => (!airline || f.airline === airline) && (!kind || f.kind === kind));
   const manage = can(hub.session?.role, "feedback.manage");
+  const paged = usePaged(items, 10, [airline, kind]);
+  const top = React.useRef<HTMLDivElement>(null);
 
   return (
     <>
@@ -37,8 +40,8 @@ function Feedback() {
         <Select value={airline} onChange={(e) => setAirline(e.target.value)} aria-label="Airline"><option value="">All airlines</option>{hub.ds.airlines.map((a) => <option key={a.code} value={a.code}>{a.name}</option>)}</Select>
         <Select value={kind} onChange={(e) => setKind(e.target.value)} aria-label="Type"><option value="">Praise and complaints</option><option value="praise">Praise</option><option value="complaint">Complaints</option></Select>
       </Card>
-      <div className="space-y-2.5">
-        {items.map((f) => {
+      <div ref={top} className="scroll-mt-20 space-y-2.5">
+        {paged.rows.map((f) => {
           const log = f.flightId ? hub.logByFlight.get(f.flightId) : undefined;
           const flight = hub.ds.flights.find((x) => x.id === f.flightId);
           return (
@@ -66,6 +69,7 @@ function Feedback() {
             </Card>
           );
         })}
+        <Pagination paged={paged} noun="comments" scrollTo={top} sizes={[10, 25, 50]} />
       </div>
     </>
   );

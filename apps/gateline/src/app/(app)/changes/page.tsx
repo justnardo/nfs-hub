@@ -6,6 +6,7 @@ import { Avatar, Badge, Button, Card, CardContent, CardDescription, CardHeader, 
 import { ROLE_LABEL } from "@nfs/auth";
 import { addDays, formatDate, type Role } from "@nfs/db";
 import { RequirePerm } from "@/components/guard";
+import { Pagination, usePaged } from "@/components/pagination";
 import { useHub } from "@/lib/store";
 import { ACTION_LABEL, UNDOABLE, allTeams, teamLabel, type AuditAction, type AuditEntry } from "@/lib/periods";
 
@@ -58,6 +59,9 @@ function Changes() {
     return true;
   });
 
+  const paged = usePaged(list, 12, [who, team, group, range, q]);
+  const top = React.useRef<HTMLDivElement>(null);
+
   // Who's been changing things (by person), for the selected window
   const windowed = hub.audit.filter((e) => !since || e.at.slice(0, 10) >= since);
   const byActor = new Map<string, { name: string; role: Role; n: number; id: string }>();
@@ -107,8 +111,9 @@ function Changes() {
         ))}
       </div>
 
-      <div className="grid gap-5 xl:grid-cols-[1fr_300px]">
+      <div className="grid gap-5 @5xl/main:grid-cols-[1fr_300px]">
         <Card className="min-w-0">
+          <div ref={top} className="scroll-mt-20" />
           <CardHeader className="flex-wrap gap-2">
             <div><CardTitle>Changes</CardTitle><CardDescription>{list.length} shown</CardDescription></div>
             <div className="flex flex-wrap items-center gap-2">
@@ -141,7 +146,8 @@ function Changes() {
           </CardHeader>
           <CardContent className="space-y-2">
             {list.length === 0 ? <p className="py-8 text-center text-sm text-muted">No changes match. Changes appear here as soon as anyone edits a roster, moves an agent or publishes.</p> : null}
-            {list.map((e) => <Row key={e.id} e={e} />)}
+            {paged.rows.map((e) => <Row key={e.id} e={e} />)}
+            <Pagination paged={paged} noun="changes" scrollTo={top} sizes={[12, 25, 50]} />
           </CardContent>
         </Card>
 

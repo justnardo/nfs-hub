@@ -55,7 +55,7 @@ function RuleSettings() {
               {RULE_META.filter((m) => m.category === cat).map((m) => {
                 const s = draft[m.id];
                 return (
-                  <div key={m.id} className={cn("grid gap-3 py-3 md:grid-cols-[1fr_auto_auto] md:items-center", !s.enabled && "opacity-60")}>
+                  <div key={m.id} className={cn("grid gap-3 py-3 @2xl/main:grid-cols-[1fr_auto_auto] md:items-center", !s.enabled && "opacity-60")}>
                     <div>
                       <p className="flex items-center gap-2 text-sm font-semibold">
                         {m.name}
