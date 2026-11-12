@@ -63,6 +63,10 @@ interface HubState {
 
 const Ctx = React.createContext<HubState | null>(null);
 
+function emptyDataset(today: string): Dataset {
+  return { today, nowMinutes: 0, windowStart: today, windowDays: [], airlines: [], people: [], flights: [], roster: [], gateLogs: [], feedback: [] };
+}
+
 export function HubProvider({ children }: { children: React.ReactNode }) {
   const [mounted, setMounted] = React.useState(false);
   const [clock, setClock] = React.useState(() => nassauNow());
@@ -125,7 +129,8 @@ export function HubProvider({ children }: { children: React.ReactNode }) {
   }, [reload, pullRemote]);
 
   // Day changes regenerate the seed; minutes only move the "live" window.
-  const ds = React.useMemo(() => generateDataset(clock.date, mounted ? clock.minutes : 0), [clock.date, mounted]); // eslint-disable-line react-hooks/exhaustive-deps
+  // Generated in the browser only: pre-rendering stays light and every page waits for `ready` anyway.
+  const ds = React.useMemo<Dataset>(() => (mounted ? generateDataset(clock.date, clock.minutes) : emptyDataset(clock.date)), [clock.date, mounted]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const people = React.useMemo(() => new Map(ds.people.map((p) => [p.id, p])), [ds]);
 
