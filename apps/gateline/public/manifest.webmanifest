@@ -4,7 +4,7 @@
   "description": "Above-the-wing rostering, gate logs and performance for Nassau Flight Services.",
   "start_url": "/",
   "display": "standalone",
-  "background_color": "#0b1b2b",
+  "background_color": "#ffffff",
   "theme_color": "#0b1b2b",
   "orientation": "any",
   "icons": [

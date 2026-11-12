@@ -12,7 +12,7 @@ pnpm --filter @nfs/gateline dev      # http://localhost:3100
 pnpm --filter @nfs/gateline build && pnpm --filter @nfs/gateline start
 ```
 
-Sign in from `/login` with one of the demo roles (Manager, Supervisor, Gate Lead UA / WU, Agent) or any staff member.
+Sign in at `/login` with a staff ID and password; the account decides the role and landing page. Demo password for every account: `Gateline2026`. Demo IDs: Super Admin NFS-4170, Manager NFS-4168, Supervisor NFS-4164, Lead (United) NFS-4100, Lead (Western Air) NFS-4150, Agent (Air Canada) NFS-4118.
 
 ## What's in the box
 

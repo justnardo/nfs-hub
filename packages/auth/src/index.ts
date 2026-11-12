@@ -10,7 +10,7 @@ export const ROLE_LABEL: Record<Role, string> = {
   lead: "Lead",
   supervisor: "Supervisor",
   manager: "Manager",
-  admin: "Admin",
+  admin: "Super Admin",
 };
 
 export const ROLE_RANK: Record<Role, number> = { agent: 1, lead: 2, supervisor: 3, manager: 4, admin: 5 };
@@ -26,14 +26,22 @@ export type Permission =
   | "records.share"
   | "airlines.edit"
   | "feedback.manage"
-  | "staff.view";
+  | "staff.view"
+  | "system.admin";
+
+const ALL_OPERATIONAL: Permission[] = [
+  "roster.view", "gate.log", "staff.view", "roster.edit", "reassign.request", "reassign.approve",
+  "reassign.override", "analytics.view", "records.share", "feedback.manage", "airlines.edit",
+];
 
 const GRANTS: Record<Role, Permission[]> = {
   agent: ["roster.view"],
   lead: ["roster.view", "gate.log", "staff.view"],
   supervisor: ["roster.view", "gate.log", "staff.view", "reassign.request", "analytics.view", "records.share"],
-  manager: ["roster.view", "gate.log", "staff.view", "roster.edit", "reassign.request", "reassign.approve", "reassign.override", "analytics.view", "records.share", "feedback.manage"],
-  admin: ["roster.view", "gate.log", "staff.view", "roster.edit", "reassign.request", "reassign.approve", "reassign.override", "analytics.view", "records.share", "feedback.manage", "airlines.edit"],
+  // Managers see and can act on everything operational.
+  manager: ALL_OPERATIONAL,
+  // Super Admin: everything, plus system controls (accounts, settings, demo reset).
+  admin: [...ALL_OPERATIONAL, "system.admin"],
 };
 
 export function can(role: Role | undefined, perm: Permission): boolean {
@@ -82,6 +90,24 @@ export function signOut() {
   } catch {
     /* ignore */
   }
+}
+
+/**
+ * Demo sign-in: staff ID + password. The account decides the role — nobody picks it.
+ * Production replaces this with Supabase Auth; the staff record still carries the role.
+ */
+export const DEMO_PASSWORD = "Gateline2026";
+
+export function normaliseStaffId(input: string): string {
+  const digits = input.trim().toUpperCase().replace(/^NFS-?/, "");
+  return `NFS-${digits}`;
+}
+
+export function authenticate(people: Person[], staffId: string, password: string): { ok: true; person: Person } | { ok: false; error: string } {
+  const id = normaliseStaffId(staffId);
+  const person = people.find((p) => p.staffNo === id);
+  if (!person || password !== DEMO_PASSWORD) return { ok: false, error: "Staff ID or password is incorrect." };
+  return { ok: true, person };
 }
 
 /** Where each role lands after signing in. */

@@ -137,7 +137,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
               {hub.offline ? <WifiOff className="size-3.5" /> : <Wifi className="size-3.5" />}
               {hub.offline ? `Offline${hub.pendingCount ? ` · ${hub.pendingCount} queued` : ""}` : "Online"}
             </button>
-            {can(role, "roster.edit") ? (
+            {can(role, "system.admin") ? (
               <Button variant="ghost" size="icon" title="Reset demo data" onClick={() => hub.resetDemo()} className="hidden sm:inline-flex">
                 <RotateCcw />
               </Button>
