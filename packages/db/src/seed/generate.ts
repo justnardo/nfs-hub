@@ -182,8 +182,12 @@ export function generateDataset(today: string, nowMinutes: number): Dataset {
     if (p.role === "agent" && vr.chance(0.06)) vacationWeek.set(p.id, vr.pick(weeks));
   }
 
-  const rosterTeam = (members: Person[], ws: string, req: (date: string, s: "E" | "L") => number) => {
+  const rosterTeam = (members: Person[], ws: string, reqRaw: (date: string, s: "E" | "L") => number) => {
     const days = rangeDays(ws, 7);
+    // demand is fixed for the week: compute once instead of per candidate pattern
+    const demand = new Map<string, number>();
+    for (const d of days) for (const sh of ["E", "L"] as const) demand.set(d + sh, reqRaw(d, sh));
+    const req = (d: string, sh: "E" | "L") => demand.get(d + sh) ?? 0;
     const cur = days.map(() => ({ E: 0, L: 0 }));
     const wr = rng(`roster-${ws}-${members.map((m) => m.id).join(",")}`);
     const working = wr.shuffle(members).filter((m) => {
