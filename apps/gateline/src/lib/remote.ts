@@ -5,8 +5,8 @@
  */
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 
-export type Kind = "log" | "reassignment" | "feedback" | "roster" | "airline" | "route" | "person" | "profile" | "request" | "rules";
-export const KINDS: Kind[] = ["log", "reassignment", "feedback", "roster", "airline", "route", "person", "profile", "request", "rules"];
+export type Kind = "log" | "reassignment" | "feedback" | "roster" | "airline" | "route" | "person" | "profile" | "request" | "rules" | "period" | "audit";
+export const KINDS: Kind[] = ["log", "reassignment", "feedback", "roster", "airline", "route", "person", "profile", "request", "rules", "period", "audit"];
 export type StateMap = Record<Kind, Record<string, unknown>>;
 
 export const emptyState = (): StateMap => Object.fromEntries(KINDS.map((k) => [k, {}])) as StateMap;

@@ -56,3 +56,11 @@ supabase/seed.sql    Same fictional data as the demo (pnpm seed:sql)
 ## Placeholders waiting on NFS
 
 SLA minimums per airline, the full above-the-wing airline list, current passenger services rosters, the manual gate form, passenger-services union rules, training records by airline, and the NFS logo files.
+
+## Roster periods, sharing and the change log
+
+- **Create roster** (supervisors and managers): the engine builds a 1–4 week draft for one team or all teams against flight demand, SLA minimums and the rules. Weeks run Sunday–Saturday.
+- **Publish** (managers): the draft becomes the live roster. Day-to-day changes after that are logged and marked on the roster and the share link.
+- **PDF**: branded, landscape, one table per team per week with coverage vs SLA. Drafts are marked DRAFT.
+- **Share link** (`/r/<token>`): read-only, no sign-in. Agents find their name, see their shifts and add them to their phone calendar (.ics). It expires at the end of the roster and can be revoked.
+- **Change log** (`/changes`, managers): every shift change, agent move, team assignment, publish and config change, with who, role, when and reason. Undo from the log.

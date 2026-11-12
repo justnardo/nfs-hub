@@ -1,9 +1,10 @@
 "use client";
 import * as React from "react";
 import Link from "next/link";
-import { AlertTriangle, CheckCircle2, ChevronLeft, ChevronRight, Download, Lock, RotateCcw, Settings2, Sparkles, Users, XCircle } from "lucide-react";
-import { Avatar, Badge, Button, Card, CardContent, CardDescription, CardHeader, CardTitle, Dialog, DialogContent, PageHeader, Select, cn } from "@nfs/ui";
-import { can } from "@nfs/auth";
+import { useRouter } from "next/navigation";
+import { AlertTriangle, CalendarPlus, CheckCircle2, ChevronLeft, ChevronRight, Download, FileText, History, Loader2, Lock, Settings2, Sparkles, Users, XCircle } from "lucide-react";
+import { Avatar, Badge, Button, Card, CardContent, CardDescription, CardHeader, CardTitle, Dialog, DialogContent, Label, PageHeader, Select, Textarea, cn } from "@nfs/ui";
+import { ROLE_LABEL, can } from "@nfs/auth";
 import { addDays, formatDate, rangeDays, shiftDemand, weekStart, type Person, type ShiftCode } from "@nfs/db";
 import {
   CoverageContext, RULE_META, SHIFT_LABEL, SHIFT_TIMES, cellFromDay, check, eligibleFor, fairnessHistory, optimiseWeek,
@@ -13,6 +14,9 @@ import { useHub, useEngineInput, personName } from "@/lib/store";
 import { RequirePerm } from "@/components/guard";
 import { AirlineChip, LEVEL_STYLE, PersonLink, ReassignDialog, ShiftChip } from "@/components/ops";
 import { CoverageTimeline } from "@/components/timeline";
+import { CellMenu } from "@/components/roster-grid";
+import { allTeams, buildPeriod, periodEnd, rosterSections, teamLabel, teamMembers, type TeamKey } from "@/lib/periods";
+import { downloadRosterPdf } from "@/lib/pdf";
 
 export default function RostersPage() {
   return (
@@ -22,24 +26,22 @@ export default function RostersPage() {
   );
 }
 
-type TeamKey = string; // airline code | POOL | SUP-US | SUP-INTL
-
-function teamMembers(people: Person[], team: TeamKey): Person[] {
-  const list = people.filter((p) => p.active !== false).filter((p) => {
-    if (team === "POOL") return (p.role === "agent" || p.role === "lead") && !p.coreAirline;
-    if (team === "SUP-US") return p.role === "supervisor" && p.homeTerminal === "US";
-    if (team === "SUP-INTL") return p.role === "supervisor" && p.homeTerminal === "INTL";
-    return (p.role === "agent" || p.role === "lead") && p.coreAirline === team;
-  });
-  return list.sort((a, b) => (a.role === b.role ? a.lastName.localeCompare(b.lastName) : a.role === "lead" ? -1 : 1));
-}
-
 function Rosters() {
   const hub = useHub();
   const input = useEngineInput();
   const editable = can(hub.session?.role, "roster.edit");
+  const assign = can(hub.session?.role, "staff.assign");
   const [team, setTeam] = React.useState<TeamKey>(hub.me?.coreAirline ?? "UA");
   const [ws, setWs] = React.useState(() => weekStart(hub.today));
+  const [createOpen, setCreateOpen] = React.useState(false);
+  const [pdfBusy, setPdfBusy] = React.useState(false);
+  React.useEffect(() => {
+    // Deep links from roster periods: /rosters?team=UA&week=2026-11-23
+    const q = new URLSearchParams(window.location.search);
+    if (q.get("team")) setTeam(q.get("team")!);
+    if (q.get("week")) setWs(weekStart(q.get("week")!));
+  }, []);
+  const maxWs = weekStart(hub.ds.horizonEnd);
   const [menu, setMenu] = React.useState<{ personId: string; date: string } | null>(null);
   const [gapCell, setGapCell] = React.useState<CoverageCell | null>(null);
   const [optOpen, setOptOpen] = React.useState(false);
@@ -69,6 +71,27 @@ function Rosters() {
   const gaps = cells.filter((c) => (c.level === "red" || c.level === "amber") && c.date >= hub.today);
   const covers = hub.reassignments.filter((r) => days.includes(r.date));
   const manual = [...hub.overrides.values()].filter((o) => memberIds.includes(o.personId) && days.includes(o.date));
+
+  const unrostered = members.length > 0 && members.every((m) => days.every((d) => ctx.shift(m.id, d) === undefined));
+  const periodsHere = hub.periods.filter((p) => p.teams.includes(team) && (editable || p.status === "published")).sort((a, b) => b.start.localeCompare(a.start));
+  const livePeriod = hub.periods.filter((p) => p.status === "published" && p.teams.includes(team) && p.start <= ws && periodEnd(p) >= ws).sort((a, b) => (b.publishedAt ?? "").localeCompare(a.publishedAt ?? ""))[0];
+  const recent = hub.audit.filter((e) => e.teams?.includes(team) && e.action !== "undo").slice(0, 6);
+
+  const exportPdf = async () => {
+    setPdfBusy(true);
+    try {
+      await downloadRosterPdf({
+        title: `${teamLabel(team, hub.ds.airlines)} · Passenger Service roster`,
+        subtitle: `Week of ${formatDate(ws, { day: "numeric", month: "long", year: "numeric" })}`,
+        status: "live",
+        meta: [livePeriod?.publishedBy ? `Published by ${livePeriod.publishedBy.name}` : "Engine roster with live changes", `Printed by ${hub.session?.name ?? ""}`],
+        sections: rosterSections(input, [team], ws, 1),
+        filename: `NFS-roster-${team}-${ws}.pdf`,
+      });
+    } finally {
+      setPdfBusy(false);
+    }
+  };
 
   const ruleSummary = RULE_META.filter((m) => hub.rules[m.id].enabled).map((m) => ({ m, list: violations.filter((v) => v.ruleId === m.id) }));
   const hard = violations.filter((v) => v.severity === "hard").length;
@@ -100,11 +123,13 @@ function Rosters() {
             <div className="flex items-center gap-1">
               <Button variant="outline" size="icon" disabled={ws <= hub.ds.windowStart} onClick={() => setWs(addDays(ws, -7))} aria-label="Previous week"><ChevronLeft /></Button>
               <span className="min-w-36 text-center text-sm font-semibold">{formatDate(ws, { day: "numeric", month: "short" })} – {formatDate(addDays(ws, 6), { day: "numeric", month: "short" })}</span>
-              <Button variant="outline" size="icon" disabled={ws >= addDays(hub.ds.windowStart, 21)} onClick={() => setWs(addDays(ws, 7))} aria-label="Next week"><ChevronRight /></Button>
+              <Button variant="outline" size="icon" disabled={ws >= maxWs} onClick={() => setWs(addDays(ws, 7))} aria-label="Next week"><ChevronRight /></Button>
             </div>
-            {editable ? <Button variant="outline" onClick={() => setTeamOpen(true)}><Users /> Team</Button> : null}
-            <Button variant="outline" onClick={exportCsv}><Download /> CSV</Button>
-            {editable && addDays(ws, 6) >= hub.today ? <Button onClick={() => setOptOpen(true)}><Sparkles /> Optimise week</Button> : null}
+            {assign && airline ? <Button variant="outline" onClick={() => setTeamOpen(true)}><Users /> Team</Button> : null}
+            <Button variant="outline" onClick={exportPdf} disabled={pdfBusy || unrostered}>{pdfBusy ? <Loader2 className="animate-spin" /> : <FileText />} PDF</Button>
+            <Button variant="outline" onClick={exportCsv} disabled={unrostered}><Download /> CSV</Button>
+            {editable && addDays(ws, 6) >= hub.today && !unrostered ? <Button variant="outline" onClick={() => setOptOpen(true)}><Sparkles /> Optimise week</Button> : null}
+            {editable ? <Button onClick={() => setCreateOpen(true)}><CalendarPlus /> Create roster</Button> : null}
           </>
         }
       />
@@ -117,12 +142,23 @@ function Rosters() {
                 <CardTitle className="flex items-center gap-2">{airline ? <AirlineChip airline={airline} size="md" /> : team === "POOL" ? "Float pool" : team === "SUP-US" ? "Supervisors · US Departures" : "Supervisors · International"}</CardTitle>
                 <CardDescription>
                   {members.filter((m) => m.role === "lead").length} leads · {members.filter((m) => m.role === "agent").length} agents · E {SHIFT_TIMES.E.start}–{SHIFT_TIMES.E.end} · M {SHIFT_TIMES.M.start}–{SHIFT_TIMES.M.end} · L {SHIFT_TIMES.L.start}–{SHIFT_TIMES.L.end}
-                  {manual.length ? ` · ${manual.length} manual change${manual.length > 1 ? "s" : ""}` : ""}
+                  {manual.length ? ` · ${manual.length} hand change${manual.length > 1 ? "s" : ""}` : ""}
+                  {livePeriod ? ` · published ${formatDate(livePeriod.publishedAt!.slice(0, 10), { day: "numeric", month: "short" })} by ${livePeriod.publishedBy?.name}` : ""}
                 </CardDescription>
               </div>
               <Badge tone={hard ? "bad" : "ok"}>{hard ? `${hard} to fix` : "Rules clear"}</Badge>
             </CardHeader>
             <CardContent className="overflow-x-auto px-2 sm:px-5">
+              {unrostered ? (
+                <div className="grid place-items-center gap-3 rounded-xl border border-dashed border-line px-6 py-12 text-center">
+                  <CalendarPlus className="size-8 text-brand-500" />
+                  <div>
+                    <p className="font-semibold">This week isn&apos;t rostered yet</p>
+                    <p className="mt-1 text-sm text-muted">Flights are scheduled, so the engine can build it against SLA demand and the rules.</p>
+                  </div>
+                  {editable ? <Button onClick={() => setCreateOpen(true)}><CalendarPlus /> Create roster</Button> : <p className="text-xs text-muted">Your supervisor will publish it.</p>}
+                </div>
+              ) : (
               <table className="w-full border-separate border-spacing-y-1 text-sm">
                 <thead>
                   <tr>
@@ -160,13 +196,14 @@ function Rosters() {
                           const worst = v.some((x) => x.severity === "hard") ? "hard" : v.length ? "soft" : null;
                           const moved = covers.find((c) => c.personId === m.id && c.date === d);
                           const isManual = hub.overrides.has(k);
+                          const ov = hub.overrides.get(k);
                           const past = d < hub.today;
                           return (
                             <td key={d} className="relative px-1 py-1 text-center transition-colors group-hover:bg-brand-50/60">
                               <button
                                 disabled={!editable || past}
                                 onClick={() => setMenu(menu?.personId === m.id && menu.date === d ? null : { personId: m.id, date: d })}
-                                title={[`${SHIFT_LABEL[s]}${isManual ? " · changed by a manager" : ""}`, ...v.map((x) => x.message)].join("\n")}
+                                title={[`${SHIFT_LABEL[s]}${ov ? ` · changed by ${ov.by}${ov.byRole ? ` (${ROLE_LABEL[ov.byRole as keyof typeof ROLE_LABEL]})` : ""} on ${new Date(ov.at).toLocaleString("en-GB", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" })}` : ""}`, ...v.map((x) => x.message)].join("\n")}
                                 className={cn(
                                   "relative inline-block rounded-md transition-shadow",
                                   editable && !past && "cursor-pointer hover:ring-2 hover:ring-brand-400",
@@ -227,8 +264,9 @@ function Rosters() {
                     : null}
                 </tbody>
               </table>
+              )}
               <div className="mt-3 flex flex-wrap items-center gap-4 px-2 text-[11px] text-muted">
-                <span className="inline-flex items-center gap-1.5"><span className="size-2 rounded-full bg-gold-400" /> Changed by a manager (the engine keeps it when optimising)</span>
+                <span className="inline-flex items-center gap-1.5"><span className="size-2 rounded-full bg-gold-400" /> Changed by hand (hover to see who; the engine keeps it when optimising)</span>
                 <span className="inline-flex items-center gap-1.5"><span className="size-3 rounded ring-2 ring-bad" /> Breaks a rule</span>
                 <span className="inline-flex items-center gap-1.5"><span className="size-3 rounded ring-2 ring-amber-400" /> Should fix</span>
                 {editable ? <span>Click a cell to change it · past days are locked</span> : null}
@@ -252,6 +290,43 @@ function Rosters() {
         </div>
 
         <div className="space-y-5">
+          <Card>
+            <CardHeader>
+              <div><CardTitle>Roster periods</CardTitle><CardDescription>{editable ? "Drafts and published rosters for this team" : "Published rosters for this team"}</CardDescription></div>
+              {editable ? <Button variant="ghost" size="icon" onClick={() => setCreateOpen(true)} title="Create roster"><CalendarPlus /></Button> : null}
+            </CardHeader>
+            <CardContent className="space-y-1.5">
+              {periodsHere.length === 0 ? <p className="text-sm text-muted">No roster periods yet. The current weeks come from the engine&apos;s baseline.</p> : null}
+              {periodsHere.slice(0, 6).map((p) => (
+                <Link key={p.id} href={`/rosters/periods/${p.id}`} className="flex items-center gap-3 rounded-lg border border-line px-3 py-2 transition-colors hover:border-brand-400 hover:bg-brand-50">
+                  <div className="min-w-0 flex-1">
+                    <p className="text-sm font-semibold">{formatDate(p.start, { day: "numeric", month: "short" })} – {formatDate(periodEnd(p), { day: "numeric", month: "short" })}</p>
+                    <p className="truncate text-xs text-muted">{p.weeks} week{p.weeks > 1 ? "s" : ""} · {p.teams.length > 1 ? `${p.teams.length} teams` : teamLabel(p.teams[0], hub.ds.airlines)}{p.share ? " · shared" : ""}</p>
+                  </div>
+                  <Badge tone={p.status === "published" ? "ok" : "warn"}>{p.status === "published" ? "Published" : "Draft"}</Badge>
+                </Link>
+              ))}
+            </CardContent>
+          </Card>
+
+          {editable ? (
+            <Card>
+              <CardHeader>
+                <div><CardTitle>Recent changes</CardTitle><CardDescription>Who changed this team&apos;s roster</CardDescription></div>
+                {can(hub.session?.role, "audit.view") ? <Button variant="ghost" size="icon" asChild title="Change log"><Link href={`/changes?team=${team}`}><History /></Link></Button> : null}
+              </CardHeader>
+              <CardContent className="space-y-2">
+                {recent.length === 0 ? <p className="text-sm text-muted">No changes yet.</p> : null}
+                {recent.map((e) => (
+                  <div key={e.id} className={cn("text-xs", e.undone && "opacity-50 line-through")}>
+                    <p className="font-medium text-ink-900">{e.summary}</p>
+                    <p className="text-muted">{e.actor.name} · {ROLE_LABEL[e.actor.role]} · {new Date(e.at).toLocaleString("en-GB", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" })}</p>
+                  </div>
+                ))}
+              </CardContent>
+            </Card>
+          ) : null}
+
           {outlook ? (
             <Card className={cn(outlook.verdict === "short" && "border-red-200", outlook.verdict === "rearrange" && "border-amber-200")}>
               <CardHeader><div><CardTitle>Staffing outlook</CardTitle><CardDescription>Can this week be covered by moving shifts, or does it need people?</CardDescription></div></CardHeader>
@@ -290,7 +365,7 @@ function Rosters() {
           <Card>
             <CardHeader>
               <div><CardTitle>Rule checks</CardTitle><CardDescription>This team and week, seams with last week included</CardDescription></div>
-              {can(hub.session?.role, "roster.edit") ? <Button variant="ghost" size="icon" asChild title="Rule settings"><Link href="/settings"><Settings2 /></Link></Button> : null}
+              {can(hub.session?.role, "rules.edit") ? <Button variant="ghost" size="icon" asChild title="Rule settings"><Link href="/settings"><Settings2 /></Link></Button> : null}
             </CardHeader>
             <CardContent className="space-y-2">
               {ruleSummary.map(({ m, list }) => {
@@ -314,36 +389,8 @@ function Rosters() {
       <ReassignDialog cell={gapCell ? cells.find((c) => c.date === gapCell.date && c.shift === gapCell.shift) ?? gapCell : null} open={!!gapCell} onOpenChange={(v) => !v && setGapCell(null)} />
       {optOpen ? <OptimiseDialog team={team} members={members} ws={ws} onClose={() => setOptOpen(false)} /> : null}
       {teamOpen && airline ? <TeamDialog airlineCode={airline.code} onClose={() => setTeamOpen(false)} /> : null}
+      {createOpen ? <CreateRosterDialog defaultTeam={team} defaultStart={unrostered ? ws : undefined} onClose={() => setCreateOpen(false)} /> : null}
     </>
-  );
-}
-
-function CellMenu({ current, manual, onPick, onRevert, onClose }: { current: ShiftCode; manual: boolean; onPick: (s: ShiftCode) => void; onRevert: () => void; onClose: () => void }) {
-  const ref = React.useRef<HTMLDivElement>(null);
-  React.useEffect(() => {
-    const h = (e: MouseEvent) => {
-      if (ref.current && !ref.current.contains(e.target as Node)) onClose();
-    };
-    const t = setTimeout(() => document.addEventListener("mousedown", h), 0);
-    return () => {
-      clearTimeout(t);
-      document.removeEventListener("mousedown", h);
-    };
-  }, [onClose]);
-  return (
-    <div ref={ref} className="absolute left-1/2 top-full z-30 mt-1 w-40 -translate-x-1/2 rounded-xl border border-line bg-card p-1.5 text-left shadow-xl">
-      {(["E", "M", "L", "O", "V"] as ShiftCode[]).map((c) => (
-        <button key={c} onClick={() => onPick(c)} className={cn("flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-xs font-semibold transition-colors hover:bg-brand-50 hover:text-brand-700 cursor-pointer", c === current && "bg-brand-50 text-brand-700")}>
-          <ShiftChip shift={c} />
-          {SHIFT_LABEL[c]}
-        </button>
-      ))}
-      {manual ? (
-        <button onClick={onRevert} className="mt-1 flex w-full items-center gap-2 border-t border-line px-2 pt-2 pb-1 text-xs font-semibold text-muted transition-colors hover:text-brand-700 cursor-pointer">
-          <RotateCcw className="size-3.5" /> Back to engine plan
-        </button>
-      ) : null}
-    </div>
   );
 }
 
@@ -439,7 +486,7 @@ function OptimiseDialog({ team, members, ws, onClose }: { team: TeamKey; members
         ) : null}
         <div className="mt-5 flex items-center justify-end gap-2">
           <Button variant="outline" onClick={onClose}>Cancel</Button>
-          <Button disabled={!result.edits.length || !better} onClick={() => { hub.setCells(result.edits); onClose(); }}>
+          <Button disabled={!result.edits.length || !better} onClick={() => { hub.setCells(result.edits, { source: "optimise", title: `Optimised ${teamLabel(team, hub.ds.airlines)} · week of ${formatDate(ws, { day: "numeric", month: "short" })}: ${result.edits.length} shift${result.edits.length > 1 ? "s" : ""}` }); onClose(); }}>
             <Lock className="size-4" /> Apply {result.edits.length || ""} change{result.edits.length === 1 ? "" : "s"}
           </Button>
         </div>
@@ -482,6 +529,91 @@ function TeamDialog({ airlineCode, onClose }: { airlineCode: string; onClose: ()
           })}
         </div>
         <div className="mt-4 flex justify-end"><Button onClick={onClose}>Done</Button></div>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+function CreateRosterDialog({ defaultTeam, defaultStart, onClose }: { defaultTeam: TeamKey; defaultStart?: string; onClose: () => void }) {
+  const hub = useHub();
+  const input = useEngineInput();
+  const router = useRouter();
+  const thisWeek = weekStart(hub.today);
+  const lastStart = weekStart(hub.ds.horizonEnd);
+  const starts: string[] = [];
+  for (let d = thisWeek; d <= lastStart; d = addDays(d, 7)) starts.push(d);
+  const ctx = React.useMemo(() => new CoverageContext(input), [input]);
+  const firstOpen = (t: TeamKey) => {
+    const ms = t === "ALL" ? hub.ds.people.filter((p) => p.role === "agent") : teamMembers(hub.ds.people, t);
+    return starts.find((w) => ms.every((m) => rangeDays(w, 7).every((d) => ctx.shift(m.id, d) === undefined))) ?? addDays(thisWeek, 7);
+  };
+  const [team, setTeam] = React.useState<string>(defaultTeam);
+  const [start, setStart] = React.useState(() => defaultStart ?? firstOpen(defaultTeam));
+  const [weeks, setWeeks] = React.useState(4);
+  const [note, setNote] = React.useState("");
+  const [busy, setBusy] = React.useState(false);
+  const maxWeeks = Math.min(4, Math.round((Date.parse(lastStart) - Date.parse(start)) / (7 * 86400000)) + 1);
+  React.useEffect(() => setWeeks((w) => Math.min(w, maxWeeks)), [maxWeeks]);
+  const teams = team === "ALL" ? allTeams(hub.ds.airlines) : [team];
+  const end = addDays(start, weeks * 7 - 1);
+  const overlaps = hub.periods.filter((p) => p.teams.some((t) => teams.includes(t)) && p.start <= end && periodEnd(p) >= start);
+  const coversLive = start <= addDays(hub.ds.windowStart, 27);
+
+  const build = () => {
+    setBusy(true);
+    setTimeout(() => {
+      const grid = buildPeriod({ input, teams, start, weeks, rules: hub.rules, today: hub.today, seed: `period-${Date.now()}` });
+      const id = hub.createPeriod({ teams, start, weeks, grid, note: note.trim() || undefined });
+      router.push(`/rosters/periods/${id}`);
+    }, 30);
+  };
+
+  return (
+    <Dialog open onOpenChange={(v) => !v && !busy && onClose()}>
+      <DialogContent className="max-w-lg" title="Create roster" description="The engine builds a draft against flight demand, SLA minimums and the rules. You review and edit it, then publish it to staff.">
+        <div className="space-y-4">
+          <div>
+            <Label htmlFor="cr-team">Team</Label>
+            <Select id="cr-team" value={team} onChange={(e) => { setTeam(e.target.value); if (!defaultStart) setStart(firstOpen(e.target.value)); }} className="mt-1 w-full">
+              {hub.ds.airlines.map((a) => <option key={a.code} value={a.code}>{a.name}</option>)}
+              <option value="POOL">Float pool</option>
+              <option value="SUP-US">Supervisors · US</option>
+              <option value="SUP-INTL">Supervisors · International</option>
+              <option value="ALL">All teams</option>
+            </Select>
+          </div>
+          <div>
+            <Label htmlFor="cr-start">Starting week</Label>
+            <Select id="cr-start" value={start} onChange={(e) => setStart(e.target.value)} className="mt-1 w-full">
+              {starts.map((w) => <option key={w} value={w}>Week of Sun {formatDate(w, { day: "numeric", month: "long" })}{w === thisWeek ? " (this week)" : ""}</option>)}
+            </Select>
+          </div>
+          <div>
+            <Label>Length</Label>
+            <div className="mt-1 grid grid-cols-4 gap-1.5">
+              {[1, 2, 3, 4].map((n) => (
+                <button key={n} disabled={n > maxWeeks} onClick={() => setWeeks(n)} className={cn("h-10 cursor-pointer rounded-lg border text-sm font-semibold transition-colors disabled:cursor-not-allowed disabled:opacity-40", weeks === n ? "border-brand-500 bg-brand-50 text-brand-700" : "border-line hover:border-brand-400 hover:text-brand-700")}>
+                  {n} week{n > 1 ? "s" : ""}
+                </button>
+              ))}
+            </div>
+            <p className="mt-1.5 text-xs text-muted">{formatDate(start, { weekday: "short", day: "numeric", month: "short" })} – {formatDate(end, { weekday: "short", day: "numeric", month: "short", year: "numeric" })} · {teams.length > 1 ? `${teams.length} teams` : teamLabel(teams[0], hub.ds.airlines)}</p>
+          </div>
+          <div>
+            <Label htmlFor="cr-note">Note for staff (optional)</Label>
+            <Textarea id="cr-note" value={note} onChange={(e) => setNote(e.target.value)} rows={2} className="mt-1" placeholder="e.g. Holiday schedule, swap requests to your supervisor by Friday" />
+          </div>
+          {overlaps.length || coversLive ? (
+            <p className="rounded-lg bg-warn-soft px-3 py-2 text-xs text-amber-900">
+              {overlaps.length ? `Overlaps ${overlaps.length} existing period${overlaps.length > 1 ? "s" : ""}. ` : ""}
+              Publishing replaces the live roster for these dates (past days and booked leave are kept).
+            </p>
+          ) : null}
+        </div>
+        <div className="mt-5 flex items-center justify-end gap-2">
+          <Button variant="outline" onClick={onClose} disabled={busy}>Cancel</Button>
+          <Button onClick={build} disabled={busy}>{busy ? <Loader2 className="animate-spin" /> : <Sparkles />} {busy ? "Building…" : "Build draft"}</Button>
+        </div>
       </DialogContent>
     </Dialog>
   );

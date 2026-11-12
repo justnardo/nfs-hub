@@ -22,7 +22,10 @@ export interface Dataset {
   today: string;
   nowMinutes: number;
   windowStart: string;
+  /** Two past weeks, this week and next: the engine's baseline roster. */
   windowDays: string[];
+  /** Flight schedule runs further ahead so new roster periods (up to 4 weeks) can be planned. */
+  horizonEnd: string;
   airlines: Airline[];
   people: Person[];
   flights: Flight[];
@@ -135,8 +138,9 @@ export function generateDataset(today: string, nowMinutes: number, config: Datas
   // ---------- Flights ----------
   const windowStart = addDays(weekStart(today), -14);
   const windowDays = rangeDays(windowStart, 28);
+  const horizonDays = rangeDays(windowStart, 56);
   const flights: Flight[] = [];
-  for (const date of windowDays) {
+  for (const date of horizonDays) {
     const dow = dayOfWeek(date);
     const fr = rng(`flights-${date}`);
     for (const route of routes) {
@@ -385,5 +389,5 @@ export function generateDataset(today: string, nowMinutes: number, config: Datas
   }
   feedback.sort((a, b) => b.date.localeCompare(a.date));
 
-  return { today, nowMinutes, windowStart, windowDays, airlines, people, flights, roster, gateLogs, feedback };
+  return { today, nowMinutes, windowStart, windowDays, horizonEnd: horizonDays[horizonDays.length - 1], airlines, people, flights, roster, gateLogs, feedback };
 }

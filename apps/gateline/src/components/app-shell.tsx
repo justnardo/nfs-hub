@@ -3,7 +3,7 @@ import * as React from "react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import {
-  BarChart3, CalendarDays, ClipboardList, Grid3x3, KeyRound, LayoutDashboard, LogOut, MessageSquareWarning, Plane, PlaneTakeoff, Settings2, UserCog,
+  BarChart3, CalendarDays, History, ClipboardList, Grid3x3, KeyRound, LayoutDashboard, LogOut, MessageSquareWarning, Plane, PlaneTakeoff, Settings2, UserCog,
   RotateCcw, Smartphone, UserRound, Users, Wifi, WifiOff,
 } from "lucide-react";
 import { Avatar, Badge, Button, cn } from "@nfs/ui";
@@ -30,6 +30,7 @@ const NAV: { group: string; items: NavItem[] }[] = [
     items: [
       { href: "/coverage", label: "SLA coverage", icon: Grid3x3, perm: "reassign.request", mobile: true },
       { href: "/rosters", label: "Rosters", icon: CalendarDays, perm: "roster.view" },
+      { href: "/changes", label: "Change log", icon: History, perm: "audit.view" },
       { href: "/airlines", label: "Airlines", icon: Plane, perm: "staff.view" },
       { href: "/agents", label: "Agents", icon: Users, perm: "staff.view" },
     ],
@@ -46,7 +47,7 @@ const NAV: { group: string; items: NavItem[] }[] = [
     group: "Account",
     items: [
       { href: "/profile", label: "My profile", icon: UserCog, mobile: true },
-      { href: "/settings", label: "Rule settings", icon: Settings2, perm: "roster.edit" },
+      { href: "/settings", label: "Rule settings", icon: Settings2, perm: "rules.edit" },
       { href: "/admin", label: "Accounts", icon: KeyRound, perm: "system.admin" },
     ],
   },

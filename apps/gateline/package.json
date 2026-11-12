@@ -19,6 +19,8 @@
     "@nfs/rules": "workspace:*",
     "@nfs/ui": "workspace:*",
     "@supabase/supabase-js": "^2.58.0",
+    "jspdf": "^4.2.1",
+    "jspdf-autotable": "^5.0.9",
     "lucide-react": "^0.548.0",
     "next": "15.5.29",
     "react": "19.1.1",

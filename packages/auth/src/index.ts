@@ -27,17 +27,23 @@ export type Permission =
   | "airlines.edit"
   | "feedback.manage"
   | "staff.view"
+  | "staff.assign"
+  | "roster.publish"
+  | "rules.edit"
+  | "audit.view"
   | "system.admin";
 
 const ALL_OPERATIONAL: Permission[] = [
   "roster.view", "gate.log", "staff.view", "roster.edit", "reassign.request", "reassign.approve",
   "reassign.override", "analytics.view", "records.share", "feedback.manage", "airlines.edit",
+  "staff.assign", "roster.publish", "rules.edit", "audit.view",
 ];
 
 const GRANTS: Record<Role, Permission[]> = {
   agent: ["roster.view"],
   lead: ["roster.view", "gate.log", "staff.view"],
-  supervisor: ["roster.view", "gate.log", "staff.view", "reassign.request", "analytics.view", "records.share"],
+  // Supervisors run the day: change shifts, move agents, build draft rosters. Every change is logged for managers.
+  supervisor: ["roster.view", "gate.log", "staff.view", "roster.edit", "staff.assign", "reassign.request", "reassign.approve", "analytics.view", "records.share"],
   // Managers see and can act on everything operational.
   manager: ALL_OPERATIONAL,
   // Super Admin: everything, plus system controls (accounts, settings, demo reset).

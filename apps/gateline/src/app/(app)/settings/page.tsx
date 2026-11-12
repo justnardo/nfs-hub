@@ -8,7 +8,7 @@ import { RequirePerm } from "@/components/guard";
 
 export default function SettingsPage() {
   return (
-    <RequirePerm perm="roster.edit">
+    <RequirePerm perm="rules.edit">
       <RuleSettings />
     </RequirePerm>
   );

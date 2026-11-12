@@ -18,7 +18,7 @@ const POS: Record<TeamPosition, string> = { lead: "Lead", gate: "Gate", jetBridg
 export function PortfolioView({ p }: { p: Person }) {
   const hub = useHub();
   const [editing, setEditing] = React.useState(false);
-  const manage = can(hub.session?.role, "roster.edit");
+  const manage = can(hub.session?.role, "staff.assign");
   const map = new Map(hub.ds.airlines.map((a) => [a.code, a]));
   const flightById = React.useMemo(() => new Map(hub.ds.flights.map((f) => [f.id, f])), [hub.ds]);
   const pf = buildPortfolio(p.id, hub.gateLogs, flightById);
