@@ -12,6 +12,7 @@ import { formatDate } from "@nfs/db";
 import { transport } from "@nfs/events";
 import { useHub } from "@/lib/store";
 import { FirstGlanceCredit, GatelineWordmark, NfsMark } from "./brand";
+import { GlobalSearch, type SearchPage } from "./global-search";
 
 type NavItem = { href: string; label: string; icon: React.ComponentType<{ className?: string }>; perm?: Permission; mobile?: boolean };
 
@@ -52,6 +53,8 @@ const NAV: { group: string; items: NavItem[] }[] = [
     ],
   },
 ];
+
+const SEARCH_PAGES: SearchPage[] = NAV.flatMap((g) => g.items.map((i) => ({ href: i.href, label: i.label, perm: i.perm })));
 
 const COLLAPSE_KEY = "gateline.sidebar.collapsed";
 
@@ -269,11 +272,13 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         <header className="no-print sticky top-0 z-30 flex h-16 items-center gap-3 border-b border-line bg-card/90 px-4 backdrop-blur lg:px-8">
           <button onClick={() => setDrawer(true)} className="-ml-1 cursor-pointer rounded-lg p-2 text-ink-700 transition-colors hover:bg-brand-50 hover:text-brand-700 lg:hidden" aria-label="Open menu"><Menu className="size-5" /></button>
           <div className="lg:hidden"><GatelineWordmark sub={false} /></div>
-          <div className="hidden min-w-0 truncate text-sm text-muted lg:block">
-            <span className="font-semibold text-fg">LPIA</span> · Above the wing · <span className="tabular">{nowLabel}</span>
+          <div className="hidden min-w-0 shrink-0 truncate text-sm text-muted 2xl:block">
+            <span className="font-semibold text-fg">LPIA</span> · <span className="tabular">{nowLabel}</span>
           </div>
-          <div className="ml-auto flex items-center gap-2">
-            <Badge tone="gold" className="hidden md:inline-flex">Demo data · fictional staff</Badge>
+          <div className="hidden min-w-0 flex-1 justify-center md:flex"><GlobalSearch pages={SEARCH_PAGES} /></div>
+          <div className="ml-auto flex items-center gap-2 md:ml-0">
+            <div className="md:hidden"><GlobalSearch pages={SEARCH_PAGES} variant="icon" /></div>
+            <Badge tone="gold" className="hidden xl:inline-flex">Demo data · fictional staff</Badge>
             <button
               onClick={() => hub.setOffline(!hub.offline)}
               title={hub.offline ? "Offline — records held on this device" : `Online · sync via ${transport() === "supabase" ? "Supabase" : "local demo"}`}

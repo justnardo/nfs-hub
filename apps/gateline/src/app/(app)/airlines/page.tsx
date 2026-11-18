@@ -44,7 +44,7 @@ function Airlines() {
               <Card className="h-full p-5 transition-colors group-hover:border-brand-400">
                 <div className="flex items-start justify-between">
                   <AirlineChip airline={a} size="md" />
-                  <Badge tone={a.terminal === "US" ? "dark" : "neutral"}>{a.terminal === "US" ? "US Departures" : "International"}</Badge>
+                  {a.charter ? <Badge tone="gold">One-off flights</Badge> : <Badge tone={a.terminal === "US" ? "dark" : "neutral"}>{a.terminal === "US" ? "US Departures" : "International"}</Badge>}
                 </div>
                 <div className="mt-4 grid grid-cols-4 gap-2 text-center">
                   {[
@@ -60,9 +60,19 @@ function Airlines() {
                   ))}
                 </div>
                 <div className="mt-4 space-y-1.5 text-sm">
-                  <Row k="Core team" v={`${core.filter((p) => p.role === "lead").length} leads · ${core.filter((p) => p.role === "agent").length} agents`} />
-                  <Row k="Qualified backup" v={`${backup.length} staff`} />
-                  <Row k="Departures next 7 days" v={String(daily)} />
+                  {a.charter ? (
+                    <>
+                      <Row k="Team" v="Any briefed agent" />
+                      <Row k="Charter-briefed staff" v={`${backup.length} staff`} />
+                      <Row k="Charters next 7 days" v={String(daily)} />
+                    </>
+                  ) : (
+                    <>
+                      <Row k="Core team" v={`${core.filter((p) => p.role === "lead").length} leads · ${core.filter((p) => p.role === "agent").length} agents`} />
+                      <Row k="Qualified backup" v={`${backup.length} staff`} />
+                      <Row k="Departures next 7 days" v={String(daily)} />
+                    </>
+                  )}
                 </div>
                 <div className="mt-4">
                   <div className="mb-1 flex justify-between text-xs"><span className="font-semibold text-muted">On-time (D0), 14 days</span><span className="font-semibold tabular">{pct(s.d0)}</span></div>

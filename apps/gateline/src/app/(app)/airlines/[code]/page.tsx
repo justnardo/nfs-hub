@@ -7,8 +7,9 @@ import { useRouter } from "next/navigation";
 import { can } from "@nfs/auth";
 import type { RouteTemplate } from "@nfs/demo";
 import { AirlineDialog, RouteDialog } from "@/components/airline-editor";
+import { CharterBadge } from "@/components/charter-dialog";
 import { Pagination, usePaged } from "@/components/pagination";
-import { Avatar, Badge, Button, Card, CardContent, CardDescription, CardHeader, CardTitle, PageHeader, Stat, Table, Td, Th, Tr } from "@nfs/ui";
+import { Avatar, Badge, Button, Card, CardContent, CardDescription, CardHeader, CardTitle, PageHeader, Stat, Table, Td, Th, Tr, cn } from "@nfs/ui";
 import { addDays, formatDate } from "@nfs/db";
 import { eligibleFor, expiringSoon } from "@nfs/rules";
 import { useHub, personName } from "@/lib/store";
@@ -32,8 +33,9 @@ function AirlineProfile() {
   const [route, setRoute] = React.useState<RouteTemplate | "new" | null>(null);
   const [confirmRemove, setConfirmRemove] = React.useState(false);
   const a = hub.ds.airlines.find((x) => x.code === code);
-  const core = hub.ds.people.filter((p) => a && p.coreAirline === a.code).sort((x, y) => (x.role === y.role ? x.lastName.localeCompare(y.lastName) : x.role === "lead" ? -1 : 1));
+  const core = hub.ds.people.filter((p) => a && (a.charter ? p.trainedAirlines.includes(a.code) && (p.role === "agent" || p.role === "lead") : p.coreAirline === a.code)).sort((x, y) => (x.role === y.role ? x.lastName.localeCompare(y.lastName) : x.role === "lead" ? -1 : 1));
   const corePage = usePaged(core, 10, code);
+  const [showAllBackup, setShowAllBackup] = React.useState(false);
   if (!a) return <p className="text-sm text-muted">Airline not found.</p>;
   const manage = can(hub.session?.role, "airlines.edit");
   const map = new Map(hub.ds.airlines.map((x) => [x.code, x]));
@@ -56,7 +58,7 @@ function AirlineProfile() {
           <>
             {!a.slaConfirmed ? <Badge tone="gold">SLA figures are placeholders until NFS confirms</Badge> : null}
             {manage ? <Button variant="outline" onClick={() => setEditing(true)}><Pencil /> Edit airline</Button> : null}
-            {manage ? (
+            {manage && !a.charter ? (
               confirmRemove ? (
                 <>
                   <span className="text-xs text-muted">Remove {a.code}? Its core staff move to the float pool.</span>
@@ -81,10 +83,16 @@ function AirlineProfile() {
 
       <div className="mt-5 grid gap-5 @5xl/main:grid-cols-[1fr_340px]">
         <Card>
-          <CardHeader><div><CardTitle>Core team</CardTitle><CardDescription>Protected — moving these staff off {a.code} needs a manager when it breaks SLA</CardDescription></div></CardHeader>
+          <CardHeader>
+            {a.charter ? (
+              <div><CardTitle>Charter-briefed staff</CardTitle><CardDescription>{core.length} leads and agents can work a charter; covers come from the float pool first, then other teams</CardDescription></div>
+            ) : (
+              <div><CardTitle>Core team</CardTitle><CardDescription>Protected — moving these staff off {a.code} needs a manager when it breaks SLA</CardDescription></div>
+            )}
+          </CardHeader>
           <CardContent className="px-2 sm:px-5">
             <Table>
-              <thead><tr><Th>Name</Th><Th>Role</Th><Th className="hidden @lg/tbl:table-cell">Also qualified</Th><Th>Training</Th></tr></thead>
+              <thead><tr><Th>Name</Th><Th>{a.charter ? "Team" : "Role"}</Th><Th className="hidden @lg/tbl:table-cell">Also qualified</Th><Th>Training</Th></tr></thead>
               <tbody>
                 {corePage.rows.map((p) => {
                   const e = eligibleFor(p, a, hub.today);
@@ -92,7 +100,7 @@ function AirlineProfile() {
                   return (
                     <Tr key={p.id}>
                       <Td><div className="flex items-center gap-2"><Avatar name={personName(p)} src={p.photoUrl} tone={p.role === "lead" ? "dark" : "brand"} className="size-7" /><PersonLink p={p} /></div></Td>
-                      <Td className="capitalize">{p.role}</Td>
+                      <Td className="capitalize">{a.charter ? <span className="normal-case">{p.role === "lead" ? "Lead · " : ""}{p.coreAirline ? `Core ${p.coreAirline}` : "Float pool"}</span> : p.role}</Td>
                       <Td className="hidden @lg/tbl:table-cell"><div className="flex flex-wrap gap-1">{p.trainedAirlines.filter((c) => c !== a.code).map((c) => <AirlineChip key={c} airline={map.get(c)!} />)}</div></Td>
                       <Td>{!e.ok ? <Badge tone="bad">{e.reason}</Badge> : soon.length ? <Badge tone="warn">Expires {formatDate(soon[0].expires, { day: "numeric", month: "short" })}</Badge> : <Badge tone="ok">Current</Badge>}</Td>
                     </Tr>
@@ -118,21 +126,53 @@ function AirlineProfile() {
             <CardHeader><div><CardTitle>Required training</CardTitle><CardDescription>Synced from TakeFlight</CardDescription></div></CardHeader>
             <CardContent className="flex flex-wrap gap-1.5">{a.requiredTraining.map((t) => <Badge key={t} tone="brand">{t}</Badge>)}</CardContent>
           </Card>
+          {a.charter ? null : (
           <Card>
             <CardHeader><div><CardTitle>Approved backup pool</CardTitle><CardDescription>Qualified on {a.code} from other teams and the float pool</CardDescription></div></CardHeader>
             <CardContent className="space-y-1.5">
-              {backup.map((p) => (
+              {(showAllBackup ? backup : backup.slice(0, 12)).map((p) => (
                 <div key={p.id} className="flex items-center justify-between text-sm">
                   <PersonLink p={p} />
                   <Badge tone={p.coreAirline ? "neutral" : "brand"}>{p.coreAirline ? `Core ${p.coreAirline}` : "Float"}</Badge>
                 </div>
               ))}
+              {backup.length > 12 ? (
+                <button onClick={() => setShowAllBackup(!showAllBackup)} className="cursor-pointer pt-1 text-xs font-semibold text-brand-600 transition-colors hover:text-brand-700">
+                  {showAllBackup ? "Show fewer" : `Show all ${backup.length}`}
+                </button>
+              ) : null}
             </CardContent>
           </Card>
+          )}
         </div>
       </div>
 
-      <div className="mt-5 grid gap-5 @3xl/main:grid-cols-2">
+      <div className={cn("mt-5 grid gap-5", !a.charter && "@3xl/main:grid-cols-2")}>
+        {a.charter ? (
+          <Card>
+            <CardHeader>
+              <div><CardTitle>Charter flights</CardTitle><CardDescription>One-off flights; they feed SLA demand the day they operate</CardDescription></div>
+              <Button variant="secondary" size="sm" asChild><Link href="/flights"><Plus /> Manage charters</Link></Button>
+            </CardHeader>
+            <CardContent className="px-2 sm:px-5">
+              {hub.charters.length === 0 ? <p className="px-2 text-sm text-muted">No charters on record.</p> : null}
+              <Table>
+                <thead><tr><Th>Date</Th><Th>Flight</Th><Th className="hidden @lg/tbl:table-cell">Operator</Th><Th>STD</Th><Th>Status</Th></tr></thead>
+                <tbody>
+                  {hub.charters.map((c) => (
+                    <Tr key={c.id}>
+                      <Td className="whitespace-nowrap"><Link href={`/flights?date=${c.date}&focus=${c.date}-${c.id}`} className="font-semibold transition-colors hover:text-brand-600">{formatDate(c.date)}</Link></Td>
+                      <Td className="whitespace-nowrap font-semibold">{c.flightNo}</Td>
+                      <Td className="hidden @lg/tbl:table-cell max-w-52 truncate text-xs">{c.operator}</Td>
+                      <Td className="tabular">{c.std}</Td>
+                      <Td><CharterBadge status={c.status} /></Td>
+                    </Tr>
+                  ))}
+                </tbody>
+              </Table>
+            </CardContent>
+          </Card>
+        ) : (
         <Card>
           <CardHeader>
             <div><CardTitle>Flight schedule</CardTitle><CardDescription>Feeds SLA demand for rosters and coverage</CardDescription></div>
@@ -158,6 +198,8 @@ function AirlineProfile() {
             </Table>
           </CardContent>
         </Card>
+        )}
+        {a.charter ? null : (
         <Card>
           <CardHeader><div><CardTitle>Airline feedback</CardTitle></div><Button variant="ghost" size="sm" asChild><Link href="/feedback">All</Link></Button></CardHeader>
           <CardContent className="space-y-2">
@@ -169,6 +211,7 @@ function AirlineProfile() {
             ))}
           </CardContent>
         </Card>
+        )}
       </div>
     </>
   );

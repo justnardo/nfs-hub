@@ -5,8 +5,8 @@
  */
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 
-export type Kind = "log" | "reassignment" | "feedback" | "roster" | "airline" | "route" | "person" | "profile" | "request" | "rules" | "period" | "audit";
-export const KINDS: Kind[] = ["log", "reassignment", "feedback", "roster", "airline", "route", "person", "profile", "request", "rules", "period", "audit"];
+export type Kind = "log" | "reassignment" | "feedback" | "roster" | "airline" | "route" | "person" | "profile" | "request" | "rules" | "period" | "audit" | "charter";
+export const KINDS: Kind[] = ["log", "reassignment", "feedback", "roster", "airline", "route", "person", "profile", "request", "rules", "period", "audit", "charter"];
 export type StateMap = Record<Kind, Record<string, unknown>>;
 
 export const emptyState = (): StateMap => Object.fromEntries(KINDS.map((k) => [k, {}])) as StateMap;
@@ -101,4 +101,89 @@ export async function uploadAvatar(personId: string, blob: Blob): Promise<string
   const { error } = await c.storage.from("gateline-avatars").upload(path, blob, { contentType: "image/jpeg", upsert: false });
   if (error) return null;
   return c.storage.from("gateline-avatars").getPublicUrl(path).data.publicUrl;
+}
+
+/**
+ * Prepare an airline logo: trim empty margins (transparent or near-white), fit within 400×160
+ * without cropping, keep transparency, and suggest a brand colour from the most common saturated pixel hue.
+ */
+export async function prepareLogo(file: File): Promise<{ blob: Blob; colour: string | null }> {
+  const url = URL.createObjectURL(file);
+  try {
+    const img = await new Promise<HTMLImageElement>((res, rej) => {
+      const i = new Image();
+      i.onload = () => res(i);
+      i.onerror = rej;
+      i.src = url;
+    });
+    const w = img.naturalWidth || 400;
+    const h = img.naturalHeight || 160;
+    const src = document.createElement("canvas");
+    src.width = w;
+    src.height = h;
+    const sx = src.getContext("2d", { willReadFrequently: true })!;
+    sx.drawImage(img, 0, 0, w, h);
+    const px = sx.getImageData(0, 0, w, h).data;
+    const empty = (i: number) => px[i + 3] < 16 || (px[i] > 245 && px[i + 1] > 245 && px[i + 2] > 245);
+    let top = h, left = w, right = -1, bottom = -1;
+    const buckets = new Map<string, { n: number; r: number; g: number; b: number }>();
+    for (let y = 0; y < h; y++) {
+      for (let x = 0; x < w; x++) {
+        const i = (y * w + x) * 4;
+        if (empty(i)) continue;
+        if (x < left) left = x;
+        if (x > right) right = x;
+        if (y < top) top = y;
+        if (y > bottom) bottom = y;
+        const r = px[i], g = px[i + 1], b = px[i + 2];
+        const max = Math.max(r, g, b), min = Math.min(r, g, b);
+        if (max - min < 60 || max < 50) continue; // greys, black and white say nothing about the brand
+        const key = `${r >> 5}-${g >> 5}-${b >> 5}`;
+        const e = buckets.get(key) ?? { n: 0, r: 0, g: 0, b: 0 };
+        e.n++; e.r += r; e.g += g; e.b += b;
+        buckets.set(key, e);
+      }
+    }
+    if (right < 0) { left = 0; top = 0; right = w - 1; bottom = h - 1; }
+    const pad = 4;
+    left = Math.max(0, left - pad); top = Math.max(0, top - pad);
+    right = Math.min(w - 1, right + pad); bottom = Math.min(h - 1, bottom + pad);
+    const cw = right - left + 1, ch = bottom - top + 1;
+    const scale = Math.min(1, 400 / cw, 160 / ch);
+    const out = document.createElement("canvas");
+    out.width = Math.max(1, Math.round(cw * scale));
+    out.height = Math.max(1, Math.round(ch * scale));
+    const ox = out.getContext("2d")!;
+    ox.imageSmoothingQuality = "high";
+    ox.drawImage(src, left, top, cw, ch, 0, 0, out.width, out.height);
+    const blob = await new Promise<Blob>((res) => out.toBlob((b) => res(b!), "image/png"));
+    let colour: string | null = null;
+    let best = 0;
+    for (const e of buckets.values()) {
+      if (e.n > best) {
+        best = e.n;
+        const hex = (v: number) => Math.round(v / e.n).toString(16).padStart(2, "0");
+        colour = `#${hex(e.r)}${hex(e.g)}${hex(e.b)}`;
+      }
+    }
+    return { blob, colour };
+  } finally {
+    URL.revokeObjectURL(url);
+  }
+}
+
+/** Upload an airline logo; returns its public URL (or a data URL when Supabase isn't configured). */
+export async function uploadAirlineLogo(code: string, blob: Blob): Promise<string | null> {
+  const c = sb();
+  if (!c) {
+    return await new Promise((res) => {
+      const r = new FileReader();
+      r.onload = () => res(String(r.result));
+      r.readAsDataURL(blob);
+    });
+  }
+  const path = `${code}-${Date.now()}.png`;
+  const { error } = await c.storage.from("gateline-airline-logos").upload(path, blob, { contentType: "image/png", upsert: false });
+  if (error) return null;
+  return c.storage.from("gateline-airline-logos").getPublicUrl(path).data.publicUrl;
 }

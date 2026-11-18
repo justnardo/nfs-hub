@@ -56,6 +56,7 @@ export type AuditAction =
   | "share.revoke"
   | "airline.change"
   | "schedule.change"
+  | "charter.change"
   | "rules.change"
   | "undo";
 
@@ -100,6 +101,7 @@ export const ACTION_LABEL: Record<AuditAction, string> = {
   "share.revoke": "Share link revoked",
   "airline.change": "Airline / SLA changed",
   "schedule.change": "Schedule changed",
+  "charter.change": "Charter flight",
   "rules.change": "Rule settings changed",
   undo: "Undo",
 };

@@ -2,7 +2,7 @@ import type {
   Airline, DelayCause, Discrepancy, DiscrepancyType, FeedbackItem, Flight, GateEventType, GateLog,
   Person, Role, RosterEntry, ShiftCode, TeamMember, Terminal, TrainingRecord,
 } from "@nfs/db";
-import { AIRLINES, ROUTES, type RouteTemplate } from "./airlines";
+import { AIRLINES, ROUTES, demoCharters, type Charter, type RouteTemplate } from "./airlines";
 import { fairnessHistory, optimiseWeek, resolveRules, weekPatterns, type RuleSettings } from "@nfs/rules";
 import { FIRST_NAMES, LAST_NAMES } from "./names";
 import { rng } from "./prng";
@@ -16,6 +16,8 @@ export interface DatasetConfig {
   routes?: RouteTemplate[];
   personPatch?: Record<string, Partial<Person>>;
   rules?: RuleSettings;
+  /** One-off charter and ad-hoc flights (defaults to the demo set). */
+  charters?: Charter[];
 }
 
 export interface Dataset {
@@ -40,10 +42,16 @@ const TEAM_PLAN: { airline: string; leads: number; agents: number }[] = [
   { airline: "WS", leads: 2, agents: 6 },
   { airline: "BW", leads: 2, agents: 5 },
   { airline: "JY", leads: 2, agents: 6 },
+  { airline: "WN", leads: 2, agents: 10 },
+  { airline: "CM", leads: 2, agents: 9 },
+  { airline: "MX", leads: 2, agents: 8 },
+  { airline: "PD", leads: 2, agents: 7 },
+  { airline: "BA", leads: 2, agents: 8 },
 ];
 const FLOAT_POOL = 5;
 const SUPERVISORS: Terminal[] = ["US", "US", "INTL", "INTL"];
 
+const SCHEDULED = AIRLINES.filter((a) => !a.charter);
 const COURSES: Record<string, string[]> = Object.fromEntries(AIRLINES.map((a) => [a.code, a.requiredTraining]));
 
 function makeName(r: ReturnType<typeof rng>, used: Set<string>) {
@@ -98,28 +106,28 @@ export function generateDataset(today: string, nowMinutes: number, config: Datas
     return p;
   };
 
-  const sameTerminal = (code: string) => AIRLINES.filter((a) => a.terminal === AIRLINES.find((x) => x.code === code)!.terminal && a.code !== code).map((a) => a.code);
+  const sameTerminal = (code: string) => SCHEDULED.filter((a) => a.terminal === AIRLINES.find((x) => x.code === code)!.terminal && a.code !== code).map((a) => a.code);
 
   for (const plan of TEAM_PLAN) {
     const airline = AIRLINES.find((a) => a.code === plan.airline)!;
     for (let i = 0; i < plan.leads; i++) {
-      const extra = r.shuffle(AIRLINES.filter((a) => a.code !== plan.airline).map((a) => a.code)).slice(0, r.int(1, 2));
+      const extra = r.shuffle(SCHEDULED.filter((a) => a.code !== plan.airline).map((a) => a.code)).slice(0, r.int(1, 2));
       people.push(mkPerson("lead", airline.terminal, plan.airline, [plan.airline, ...extra], r.int(2008, 2017)));
     }
     for (let i = 0; i < plan.agents; i++) {
-      const pool = airline.terminal === "US" ? AIRLINES.filter((a) => a.code !== "UA").map((a) => a.code) : sameTerminal(plan.airline);
+      const pool = airline.terminal === "US" ? SCHEDULED.filter((a) => a.code !== plan.airline).map((a) => a.code) : sameTerminal(plan.airline);
       const extra = r.chance(0.55) ? r.shuffle(pool).slice(0, r.int(1, 2)) : [];
       people.push(mkPerson("agent", airline.terminal, plan.airline, [plan.airline, ...extra], r.int(2011, 2025)));
     }
   }
   for (let i = 0; i < FLOAT_POOL; i++) {
-    const trained = r.shuffle(AIRLINES.map((a) => a.code)).slice(0, r.int(3, 4));
-    const term: Terminal = trained.includes("UA") ? "US" : "INTL";
+    const trained = r.shuffle(SCHEDULED.map((a) => a.code)).slice(0, r.int(3, 4));
+    const term: Terminal = trained.some((c) => SCHEDULED.find((a) => a.code === c)?.terminal === "US") ? "US" : "INTL";
     people.push(mkPerson("agent", term, null, trained, r.int(2012, 2022)));
   }
   // Fixed, memorable IDs for management accounts (stable when teams change)
   SUPERVISORS.forEach((term, i) => {
-    const trained = AIRLINES.filter((a) => a.terminal === term || r.chance(0.5)).map((a) => a.code);
+    const trained = SCHEDULED.filter((a) => a.terminal === term || r.chance(0.5)).map((a) => a.code);
     people.push(mkPerson("supervisor", term, null, trained, r.int(2004, 2012), 1011 + i));
   });
   // Presenting manager: a fixed, named account for demos (generated name is still drawn so the rest of the seed is unchanged)
@@ -129,6 +137,19 @@ export function generateDataset(today: string, nowMinutes: number, config: Datas
   people.push(presenter);
   people.push(mkPerson("manager", "US", null, AIRLINES.map((a) => a.code), 2006, 1002));
   people.push(mkPerson("admin", "INTL", null, [], 2015, 1000));
+
+  // Charter handling briefing: every lead, supervisor and float agent, plus about four in ten core agents
+  const charterOp = AIRLINES.find((a) => a.charter);
+  if (charterOp) {
+    const cr = rng("charter-briefing-v1");
+    for (const p of people) {
+      if (p.role === "manager" || p.role === "admin" || p.trainedAirlines.includes(charterOp.code)) continue;
+      const eligible = p.role !== "agent" || !p.coreAirline || cr.chance(0.4);
+      if (!eligible) continue;
+      p.trainedAirlines = [...p.trainedAirlines, charterOp.code];
+      p.training = [...p.training, ...training(cr, charterOp.code, today, 0.03)];
+    }
+  }
 
   // Manager edits (team, role, terminal, qualifications) and self-service profile fields
   for (const p of people) {
@@ -165,6 +186,25 @@ export function generateDataset(today: string, nowMinutes: number, config: Datas
         paxBooked: Math.round(route.seats * (0.62 + fr.next() * 0.36)),
       });
     }
+  }
+  const charters = config.charters ?? demoCharters(addDays, today);
+  for (const c of charters) {
+    if (c.status === "cancelled" || !airlineBy.has(c.handledAs)) continue;
+    flights.push({
+      id: `${c.date}-${c.id}`,
+      date: c.date,
+      airline: c.handledAs,
+      flightNo: c.flightNo,
+      destination: c.dest,
+      destinationName: c.destName,
+      aircraft: c.aircraft,
+      std: c.std,
+      sta: c.sta,
+      gate: c.gate,
+      terminal: c.terminal,
+      paxBooked: c.pax,
+      adhoc: { id: c.id, operator: c.operator, status: c.status, ref: c.ref, notes: c.notes, source: c.source },
+    });
   }
   flights.sort((a, b) => (a.date + a.std).localeCompare(b.date + b.std));
 
@@ -282,7 +322,8 @@ export function generateDataset(today: string, nowMinutes: number, config: Datas
     const leads = people.filter((p) => p.role === "lead" && p.coreAirline === f.airline && onShift(p));
     const fallbackLeads = people.filter((p) => p.role === "lead" && p.trainedAirlines.includes(f.airline) && onShift(p));
     const lead = leads[0] ?? fallbackLeads[0] ?? people.find((p) => p.role === "lead" && p.coreAirline === f.airline) ?? people.find((p) => p.role === "supervisor")!;
-    const agents = fr.shuffle(people.filter((p) => p.role === "agent" && p.coreAirline === f.airline && onShift(p)));
+    const core = people.filter((p) => p.role === "agent" && p.coreAirline === f.airline && onShift(p));
+    const agents = fr.shuffle(core.length ? core : people.filter((p) => p.role === "agent" && p.trainedAirlines.includes(f.airline) && onShift(p)));
     const team: TeamMember[] = [{ personId: lead.id, position: "lead" }];
     let i = 0;
     const take = (pos: TeamMember["position"], n: number) => {
@@ -361,7 +402,7 @@ export function generateDataset(today: string, nowMinutes: number, config: Datas
   // ---------- Airline feedback ----------
   const feedback: FeedbackItem[] = [];
   const fbr = rng("feedback-v1");
-  const filed = gateLogs.filter((g) => g.status === "filed");
+  const filed = gateLogs.filter((g) => g.status === "filed" && !airlineBy.get(g.airline)?.charter);
   const PRAISE = [
     "Station manager thanked the gate team for a smooth on-time departure despite late inbound.",
     "Positive passenger comment about the wheelchair assistance at the gate.",

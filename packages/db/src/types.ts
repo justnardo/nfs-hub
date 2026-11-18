@@ -31,6 +31,8 @@ export interface Airline {
   usesJetBridge: boolean;
   /** Added by a manager in the app (not part of the seed) */
   custom?: boolean;
+  /** The built-in operator for charters and ad-hoc flights (no core team; any trained agent qualifies). */
+  charter?: boolean;
 }
 
 export interface TrainingRecord {
@@ -75,6 +77,22 @@ export interface Flight {
   gate: string;
   terminal: Terminal;
   paxBooked: number;
+  /** One-off charter / ad-hoc flight, not part of the published schedule. */
+  adhoc?: AdhocInfo;
+}
+
+export type AdhocStatus = "tentative" | "confirmed" | "cancelled";
+export interface AdhocInfo {
+  /** Charter id (stable across schedule regeneration). */
+  id: string;
+  /** Who is flying it: a tour operator, charter company or private group. */
+  operator: string;
+  status: AdhocStatus;
+  /** Handling request / quote reference for billing. */
+  ref?: string;
+  notes?: string;
+  /** Where the request came from: entered in Gateline or received from Rampline ops. */
+  source: "gateline" | "rampline";
 }
 
 export type FlightStatus =

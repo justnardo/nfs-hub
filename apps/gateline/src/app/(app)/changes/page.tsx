@@ -23,7 +23,7 @@ const GROUPS: { id: string; label: string; actions: AuditAction[] }[] = [
   { id: "moves", label: "Agent moves", actions: ["cover.move", "cover.cancel"] },
   { id: "teams", label: "Team & role", actions: ["team.assign"] },
   { id: "periods", label: "Rosters & sharing", actions: ["period.create", "period.edit", "period.publish", "period.delete", "share.create", "share.revoke"] },
-  { id: "config", label: "Airlines, schedule, rules", actions: ["airline.change", "schedule.change", "rules.change"] },
+  { id: "config", label: "Airlines, schedule, rules", actions: ["airline.change", "schedule.change", "charter.change", "rules.change"] },
   { id: "undo", label: "Undos", actions: ["undo"] },
 ];
 

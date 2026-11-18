@@ -1,15 +1,15 @@
 "use client";
 import * as React from "react";
 import {
-  nassauNow, type Airline, type FeedbackItem, type GateEventType, type GateLog, type HubEvent, type Person,
+  addDays, formatDate, nassauNow, type Airline, type FeedbackItem, type GateEventType, type GateLog, type HubEvent, type Person,
   type Reassignment, type RosterEntry, type ShiftCode,
 } from "@nfs/db";
-import { AIRLINES, ROUTES, generateDataset, type Dataset, type RouteTemplate } from "@nfs/demo";
+import { AIRLINES, ROUTES, demoCharters, generateDataset, type Charter, type Dataset, type RouteTemplate } from "@nfs/demo";
 import { resolveRules, type CellEdit, type Fix, type RosterEdit, type RuleId, type RuleSetting, type RuleSettings } from "@nfs/rules";
 import { readSession, type Session } from "@nfs/auth";
 import { EVENT_TYPES, flush, isOnline, localEvents, outbox, publish, pullRecent, setForcedOffline, subscribe, clearLocalEvents } from "@nfs/events";
 import { ACTION_LABEL, newShareToken, periodDays, periodEnd, teamLabel, teamOf, type Actor, type AuditAction, type AuditEntry, type CellChange, type RosterPeriod, type TeamKey } from "./periods";
-import { emptyState, pullAll, remoteEnabled, resetRemote, resizePhoto, subscribeState, uploadAvatar, upsert, upsertMany, type Kind, type StateMap } from "./remote";
+import { emptyState, prepareLogo, pullAll, remoteEnabled, resetRemote, resizePhoto, subscribeState, uploadAirlineLogo, uploadAvatar, upsert, upsertMany, type Kind, type StateMap } from "./remote";
 
 /**
  * Demo data layer. The seed (fictional staff, flights, history) is generated deterministically in the
@@ -80,6 +80,8 @@ interface HubState {
   overrides: Map<string, RosterOverride>;
   rosterEdits: RosterEdit[];
   routes: RouteTemplate[];
+  /** Every charter, including tentative and cancelled ones (cancelled are left out of the flight schedule). */
+  charters: Charter[];
   requests: PasswordRequest[];
   periods: RosterPeriod[];
   audit: AuditEntry[];
@@ -101,6 +103,10 @@ interface HubState {
   removeAirline: (code: string) => void;
   saveRoute: (r: RouteTemplate) => void;
   removeRoute: (flightNo: string) => void;
+  saveCharter: (c: Charter) => void;
+  removeCharter: (id: string) => void;
+  /** Trim, resize and upload a logo. Returns its URL and a suggested brand colour. */
+  uploadLogo: (code: string, file: File) => Promise<{ url: string; colour: string | null } | null>;
   savePerson: (id: string, patch: Partial<Person>, log?: boolean) => void;
   saveProfile: (id: string, patch: ProfilePatch) => void;
   uploadPhoto: (id: string, file: File) => Promise<boolean>;
@@ -213,13 +219,20 @@ export function HubProvider({ children }: { children: React.ReactNode }) {
     const added = Object.entries(edits).filter(([no, v]) => !isRemoved(v) && !ROUTES.some((r) => r.flightNo === no)).map(([, v]) => v as RouteTemplate);
     return [...base, ...added];
   }, [state.route]);
+  const charters = React.useMemo<Charter[]>(() => {
+    const edits = state.charter;
+    const seed = demoCharters(addDays, clock.date);
+    const base = seed.map((c) => (edits[c.id] && !isRemoved(edits[c.id]) ? (edits[c.id] as Charter) : c)).filter((c) => !isRemoved(edits[c.id]));
+    const added = Object.entries(edits).filter(([id, v]) => !isRemoved(v) && !seed.some((c) => c.id === id)).map(([, v]) => v as Charter);
+    return [...base, ...added].sort((a, b) => (a.date + a.std).localeCompare(b.date + b.std));
+  }, [state.charter, clock.date]);
   const rules = React.useMemo(() => resolveRules((state.rules.config ?? {}) as Partial<Record<RuleId, Partial<RuleSetting>>>), [state.rules]);
   const personPatch = state.person as Record<string, Partial<Person>>;
-  const configKey = JSON.stringify([state.airline, state.route, state.person, state.rules]);
+  const configKey = JSON.stringify([state.airline, state.route, state.person, state.rules, state.charter]);
 
   // Generated in the browser only: pre-rendering stays light and every page waits for `ready` anyway.
   const generated = React.useMemo<Dataset>(
-    () => (mounted ? generateDataset(clock.date, clock.minutes, { airlines, routes, personPatch, rules }) : emptyDataset(clock.date)),
+    () => (mounted ? generateDataset(clock.date, clock.minutes, { airlines, routes, personPatch, rules, charters }) : emptyDataset(clock.date)),
     [clock.date, mounted, configKey], // eslint-disable-line react-hooks/exhaustive-deps
   );
 
@@ -463,6 +476,31 @@ export function HubProvider({ children }: { children: React.ReactNode }) {
     },
     [write, entry, routes],
   );
+  const saveCharter = React.useCallback(
+    (c: Charter) => {
+      const prev = charters.find((x) => x.id === c.id);
+      const verb = !prev ? "Added" : prev.status !== c.status ? (c.status === "cancelled" ? "Cancelled" : c.status === "confirmed" ? "Confirmed" : "Marked tentative") : "Updated";
+      write([{ kind: "charter", id: c.id, payload: c }, entry({ action: "charter.change", summary: `${verb} charter ${c.flightNo} · ${c.operator} · ${formatDate(c.date)} STD ${c.std}`, teams: [c.handledAs], date: c.date, ref: c.id })]);
+    },
+    [write, entry, charters],
+  );
+  const removeCharter = React.useCallback(
+    (id: string) => {
+      const c = charters.find((x) => x.id === id);
+      const isSeed = id.startsWith("chr-demo-");
+      write([{ kind: "charter", id, payload: { removed: true }, deleted: !isSeed }, entry({ action: "charter.change", summary: `Deleted charter ${c?.flightNo ?? id}${c ? ` · ${c.operator}` : ""}`, teams: c ? [c.handledAs] : [], date: c?.date, ref: id })]);
+    },
+    [write, entry, charters],
+  );
+  const uploadLogo = React.useCallback(async (code: string, file: File) => {
+    try {
+      const { blob, colour } = await prepareLogo(file);
+      const url = await uploadAirlineLogo(code, blob);
+      return url ? { url, colour } : null;
+    } catch {
+      return null;
+    }
+  }, []);
   const savePerson = React.useCallback(
     (id: string, patch: Partial<Person>, log = true) => {
       const cur = people.get(id);
@@ -640,6 +678,7 @@ export function HubProvider({ children }: { children: React.ReactNode }) {
     overrides,
     rosterEdits,
     routes,
+    charters,
     requests,
     periods,
     audit,
@@ -659,6 +698,9 @@ export function HubProvider({ children }: { children: React.ReactNode }) {
     removeAirline,
     saveRoute,
     removeRoute,
+    saveCharter,
+    removeCharter,
+    uploadLogo,
     savePerson,
     saveProfile,
     uploadPhoto,
