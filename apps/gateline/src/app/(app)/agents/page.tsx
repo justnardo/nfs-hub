@@ -42,7 +42,7 @@ function Agents() {
 
   return (
     <>
-      <PageHeader eyebrow="Agent profiles & portfolios" title="Passenger services staff" description={`${rows.length} staff shown. Each profile carries role, home terminal, airlines trained on (from TakeFlight), and a portfolio of flights worked, teammates and outcomes.`} />
+      <PageHeader eyebrow="Agent profiles & portfolios" title="Passenger services staff" description={`${rows.length} staff shown. Each profile carries role, home terminal, airlines trained on, and a portfolio of flights worked, teammates and outcomes.`} />
       <Card className="mb-4 flex flex-wrap items-center gap-2 p-3">
         <div className="relative min-w-52 flex-1">
           <Search className="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-ink-400" />

@@ -15,7 +15,10 @@ import { RequirePerm } from "@/components/guard";
 import { AirlineChip, LEVEL_STYLE, PersonLink, ReassignDialog, ShiftChip } from "@/components/ops";
 import { CoverageTimeline } from "@/components/timeline";
 import { CellMenu } from "@/components/roster-grid";
-import { allTeams, buildPeriod, periodEnd, rosterSections, teamLabel, teamMembers, type TeamKey } from "@/lib/periods";
+import { AbsenceChip, AbsenceDialog, TrainingBadge } from "@/components/absence";
+import { WeekStrip, type WeekState } from "@/components/week-strip";
+import { ABSENCE_TYPES, applyAbsences } from "@/lib/absence";
+import { allTeams, buildPeriod, periodEnd, rosterSections, teamLabel, teamMembers, withPeriod, type TeamKey } from "@/lib/periods";
 import { downloadRosterPdf } from "@/lib/pdf";
 
 export default function RostersPage() {
@@ -28,8 +31,9 @@ export default function RostersPage() {
 
 function Rosters() {
   const hub = useHub();
-  const input = useEngineInput();
+  const liveInput = useEngineInput();
   const editable = can(hub.session?.role, "roster.edit");
+  const publisher = can(hub.session?.role, "roster.publish");
   const assign = can(hub.session?.role, "staff.assign");
   const [team, setTeam] = React.useState<TeamKey>(hub.me?.coreAirline ?? "UA");
   const [ws, setWs] = React.useState(() => weekStart(hub.today));
@@ -42,6 +46,26 @@ function Rosters() {
     if (q.get("week")) setWs(weekStart(q.get("week")!));
   }, []);
   const maxWs = weekStart(hub.ds.horizonEnd);
+  const [absentCell, setAbsentCell] = React.useState<{ personId: string; date: string } | null>(null);
+  const [confirmPublish, setConfirmPublish] = React.useState(false);
+  // Weeks a team can be viewed: the history, this week and every week flights are scheduled for
+  const covering = (status: "draft" | "published", w: string) =>
+    hub.periods.filter((p) => p.status === status && p.teams.includes(team) && p.start <= w && periodEnd(p) >= w).sort((a, b) => (b.publishedAt ?? b.createdAt).localeCompare(a.publishedAt ?? a.createdAt))[0];
+  const weekList = React.useMemo(() => {
+    const out: { ws: string; state: WeekState; note?: string }[] = [];
+    const baseEnd = hub.ds.windowDays[hub.ds.windowDays.length - 1];
+    for (let w = hub.ds.windowStart; w <= maxWs; w = addDays(w, 7)) {
+      const pub = covering("published", w);
+      const dr = covering("draft", w);
+      const state: WeekState = addDays(w, 6) < hub.today ? "past" : pub ? "published" : dr && editable ? "draft" : w <= baseEnd ? "rostered" : "none";
+      out.push({ ws: w, state, note: dr && editable ? "A draft covers this week" : undefined });
+    }
+    return out;
+  }, [hub.periods, hub.ds.windowStart, hub.ds.windowDays, maxWs, team, hub.today, editable]); // eslint-disable-line react-hooks/exhaustive-deps
+  const draft = editable ? covering("draft", ws) : undefined;
+  const [viewDraft, setViewDraft] = React.useState(true);
+  const showingDraft = !!draft && viewDraft;
+  const input = React.useMemo(() => (showingDraft && draft ? applyAbsences(withPeriod(liveInput, draft), hub.absences) : liveInput), [showingDraft, draft, liveInput, hub.absences]);
   const [menu, setMenu] = React.useState<{ personId: string; date: string } | null>(null);
   const [gapCell, setGapCell] = React.useState<CoverageCell | null>(null);
   const [optOpen, setOptOpen] = React.useState(false);
@@ -55,8 +79,8 @@ function Rosters() {
   const memberIds = members.map((m) => m.id);
   const ctx = React.useMemo(() => new CoverageContext(input), [input]);
   const violations = React.useMemo(
-    () => check(input, { from: ws, days: 7, personIds: memberIds, airlines: airline ? [airline.code] : [], rules: hub.rules, edits: hub.rosterEdits }, ctx),
-    [input, ws, memberIds.join(","), airline?.code, hub.rules, hub.rosterEdits, ctx], // eslint-disable-line react-hooks/exhaustive-deps
+    () => check(input, { from: ws, days: 7, personIds: memberIds, airlines: airline ? [airline.code] : [], rules: hub.rules, edits: showingDraft ? [] : hub.rosterEdits }, ctx),
+    [input, ws, memberIds.join(","), airline?.code, hub.rules, hub.rosterEdits, ctx, showingDraft], // eslint-disable-line react-hooks/exhaustive-deps
   );
   const byCell = new Map<string, Violation[]>();
   const byPerson = new Map<string, Violation[]>();
@@ -120,19 +144,39 @@ function Rosters() {
               <option value="SUP-US">Supervisors · US</option>
               <option value="SUP-INTL">Supervisors · International</option>
             </Select>
-            <div className="flex items-center gap-1">
-              <Button variant="outline" size="icon" disabled={ws <= hub.ds.windowStart} onClick={() => setWs(addDays(ws, -7))} aria-label="Previous week"><ChevronLeft /></Button>
-              <span className="min-w-36 text-center text-sm font-semibold">{formatDate(ws, { day: "numeric", month: "short" })} – {formatDate(addDays(ws, 6), { day: "numeric", month: "short" })}</span>
-              <Button variant="outline" size="icon" disabled={ws >= maxWs} onClick={() => setWs(addDays(ws, 7))} aria-label="Next week"><ChevronRight /></Button>
-            </div>
             {assign && airline ? <Button variant="outline" onClick={() => setTeamOpen(true)}><Users /> Team</Button> : null}
             <Button variant="outline" onClick={exportPdf} disabled={pdfBusy || unrostered}>{pdfBusy ? <Loader2 className="animate-spin" /> : <FileText />} PDF</Button>
             <Button variant="outline" onClick={exportCsv} disabled={unrostered}><Download /> CSV</Button>
-            {editable && addDays(ws, 6) >= hub.today && !unrostered ? <Button variant="outline" onClick={() => setOptOpen(true)}><Sparkles /> Optimise week</Button> : null}
+            {editable && addDays(ws, 6) >= hub.today && !unrostered && !showingDraft ? <Button variant="outline" onClick={() => setOptOpen(true)}><Sparkles /> Optimise week</Button> : null}
             {editable ? <Button onClick={() => setCreateOpen(true)}><CalendarPlus /> Create roster</Button> : null}
           </>
         }
       />
+
+      <div className="mb-4">
+        <WeekStrip weeks={weekList} value={ws} onChange={setWs} today={hub.today} />
+      </div>
+      {draft ? (
+        <div className={cn("mb-4 flex flex-wrap items-center gap-3 rounded-xl border px-4 py-3 text-sm", showingDraft ? "border-gold-400 bg-gold-100/50" : "border-line bg-card")}>
+          <span className="size-2 rounded-full bg-gold-500" />
+          <p className="min-w-0 flex-1">
+            <b>{showingDraft ? "Viewing the draft" : "A draft covers this week"}</b> · {formatDate(draft.start, { day: "numeric", month: "short" })} – {formatDate(periodEnd(draft), { day: "numeric", month: "short" })} · {draft.weeks} week{draft.weeks > 1 ? "s" : ""} · staff can&apos;t see it yet.{showingDraft ? " Changes here edit the draft." : ""}
+          </p>
+          <div className="flex rounded-lg border border-line bg-card p-0.5 text-xs font-semibold">
+            {[["Draft", true], ["Live", false]].map(([label, v]) => (
+              <button key={String(label)} onClick={() => setViewDraft(v as boolean)} className={cn("cursor-pointer rounded-md px-3 py-1 transition-colors", viewDraft === v ? "bg-brand-500 text-white" : "text-muted hover:text-brand-700")}>{label as string}</button>
+            ))}
+          </div>
+          <Button variant="outline" size="sm" asChild><Link href={`/rosters/periods/${draft.id}`}>Open draft</Link></Button>
+          {publisher ? (confirmPublish ? (
+            <>
+              <span className="text-xs text-muted">Publish to staff?</span>
+              <Button size="sm" onClick={() => { hub.publishPeriod(draft.id); setConfirmPublish(false); }}>Publish</Button>
+              <Button size="sm" variant="ghost" onClick={() => setConfirmPublish(false)}>Not yet</Button>
+            </>
+          ) : <Button size="sm" onClick={() => setConfirmPublish(true)}>Publish</Button>) : null}
+        </div>
+      ) : null}
 
       <div className="grid gap-5 @5xl/main:grid-cols-[1fr_340px]">
         <div className="min-w-0 space-y-5">
@@ -146,7 +190,7 @@ function Rosters() {
                   {livePeriod ? ` · published ${formatDate(livePeriod.publishedAt!.slice(0, 10), { day: "numeric", month: "short" })} by ${livePeriod.publishedBy?.name}` : ""}
                 </CardDescription>
               </div>
-              <Badge tone={hard ? "bad" : "ok"}>{hard ? `${hard} to fix` : "Rules clear"}</Badge>
+              {unrostered ? <Badge tone="neutral">Not rostered</Badge> : <Badge tone={hard ? "bad" : "ok"}>{hard ? `${hard} to fix` : "Rules clear"}</Badge>}
             </CardHeader>
             <CardContent className="overflow-x-auto px-2 sm:px-5">
               {unrostered ? (
@@ -183,7 +227,7 @@ function Rosters() {
                               <PersonLink p={m} />
                               <div className="flex flex-wrap items-center gap-1 text-[11px] text-muted">
                                 {m.role === "lead" ? "Lead" : m.role === "supervisor" ? "Supervisor" : m.staffNo}
-                                {notCurrent ? <Badge tone="bad">training expired</Badge> : null}
+                                {notCurrent && airline ? <TrainingBadge person={m} airline={airline} asOf={ws} /> : null}
                                 {rowV.length ? <span title={rowV.map((v) => v.message).join("\n")} className="inline-flex items-center gap-0.5 text-amber-700"><AlertTriangle className="size-3" />{rowV.length}</span> : null}
                               </div>
                             </div>
@@ -198,12 +242,13 @@ function Rosters() {
                           const isManual = hub.overrides.has(k);
                           const ov = hub.overrides.get(k);
                           const past = d < hub.today;
+                          const ab = hub.absenceOn(m.id, d);
                           return (
                             <td key={d} className="relative px-1 py-1 text-center transition-colors group-hover:bg-brand-50/60">
                               <button
                                 disabled={!editable || past}
                                 onClick={() => setMenu(menu?.personId === m.id && menu.date === d ? null : { personId: m.id, date: d })}
-                                title={[`${SHIFT_LABEL[s]}${ov ? ` · changed by ${ov.by}${ov.byRole ? ` (${ROLE_LABEL[ov.byRole as keyof typeof ROLE_LABEL]})` : ""} on ${new Date(ov.at).toLocaleString("en-GB", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" })}` : ""}`, ...v.map((x) => x.message)].join("\n")}
+                                title={ab ? `${ABSENCE_TYPES[ab.type].label}${ab.note ? ` · ${ab.note}` : ""} · recorded by ${ab.by}` : [`${SHIFT_LABEL[s]}${ov ? ` · changed by ${ov.by}${ov.byRole ? ` (${ROLE_LABEL[ov.byRole as keyof typeof ROLE_LABEL]})` : ""} on ${new Date(ov.at).toLocaleString("en-GB", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" })}` : ""}`, ...v.map((x) => x.message)].join("\n")}
                                 className={cn(
                                   "relative inline-block rounded-md transition-shadow",
                                   editable && !past && "cursor-pointer hover:ring-2 hover:ring-brand-400",
@@ -211,16 +256,19 @@ function Rosters() {
                                   worst === "soft" && "ring-2 ring-amber-400",
                                 )}
                               >
-                                <ShiftChip shift={s} />
+                                {ab ? <AbsenceChip a={ab} /> : <ShiftChip shift={s} />}
                                 {isManual ? <span className="absolute -left-1 -top-1 size-2 rounded-full border border-card bg-gold-400" /> : null}
                                 {moved ? <span className="absolute -right-1.5 -top-1.5 rounded bg-brand-500 px-1 text-[8.5px] font-bold text-white">{moved.toAirline}</span> : null}
                               </button>
                               {menu?.personId === m.id && menu.date === d ? (
                                 <CellMenu
                                   current={s}
-                                  manual={isManual}
+                                  manual={isManual && !showingDraft}
+                                  absent={!!ab}
+                                  onAbsence={() => { setAbsentCell({ personId: m.id, date: d }); setMenu(null); }}
                                   onPick={(code) => {
-                                    hub.setCells([{ personId: m.id, date: d, shift: code }]);
+                                    if (showingDraft && draft) hub.editPeriodCells(draft.id, [{ personId: m.id, date: d, shift: code }]);
+                                    else hub.setCells([{ personId: m.id, date: d, shift: code }]);
                                     setMenu(null);
                                   }}
                                   onRevert={() => {
@@ -269,12 +317,13 @@ function Rosters() {
                 <span className="inline-flex items-center gap-1.5"><span className="size-2 rounded-full bg-gold-400" /> Changed by hand (hover to see who; the engine keeps it when optimising)</span>
                 <span className="inline-flex items-center gap-1.5"><span className="size-3 rounded ring-2 ring-bad" /> Breaks a rule</span>
                 <span className="inline-flex items-center gap-1.5"><span className="size-3 rounded ring-2 ring-amber-400" /> Should fix</span>
-                {editable ? <span>Click a cell to change it · past days are locked</span> : null}
+                <span className="inline-flex items-center gap-1.5"><span className="rounded bg-red-100 px-1 text-[9px] font-bold text-red-800">SICK</span> Absent (sick, leave, maternity…): hover for the reason</span>
+                {editable ? <span>Click a cell to change it or mark someone absent · past days are locked</span> : null}
               </div>
             </CardContent>
           </Card>
 
-          {airline ? (
+          {airline && !unrostered ? (
             <Card>
               <CardHeader>
                 <div><CardTitle>Coverage through the day</CardTitle><CardDescription>{airline.name} · trained agents on duty against SLA need, every 15 minutes</CardDescription></div>
@@ -387,6 +436,7 @@ function Rosters() {
       </div>
 
       <ReassignDialog cell={gapCell ? cells.find((c) => c.date === gapCell.date && c.shift === gapCell.shift) ?? gapCell : null} open={!!gapCell} onOpenChange={(v) => !v && setGapCell(null)} />
+      {absentCell && hub.people.get(absentCell.personId) ? <AbsenceDialog person={hub.people.get(absentCell.personId)!} date={absentCell.date} absence={hub.absenceOn(absentCell.personId, absentCell.date)} onClose={() => setAbsentCell(null)} /> : null}
       {optOpen ? <OptimiseDialog team={team} members={members} ws={ws} onClose={() => setOptOpen(false)} /> : null}
       {teamOpen && airline ? <TeamDialog airlineCode={airline.code} onClose={() => setTeamOpen(false)} /> : null}
       {createOpen ? <CreateRosterDialog defaultTeam={team} defaultStart={unrostered ? ws : undefined} onClose={() => setCreateOpen(false)} /> : null}
@@ -504,7 +554,7 @@ function TeamDialog({ airlineCode, onClose }: { airlineCode: string; onClose: ()
     .sort((a, b) => Number(b.coreAirline === airlineCode) - Number(a.coreAirline === airlineCode) || a.lastName.localeCompare(b.lastName));
   return (
     <Dialog open onOpenChange={(v) => !v && onClose()}>
-      <DialogContent className="max-w-xl" title={`${airline.name} team`} description="Move staff onto or off this airline's core team. Rosters rebuild with the change; training still comes from TakeFlight.">
+      <DialogContent className="max-w-xl" title={`${airline.name} team`} description="Move staff onto or off this airline's core team. Rosters rebuild with the change; training records stay with the training department.">
         <div className="max-h-[55vh] space-y-1.5 overflow-y-auto pr-1">
           {staff.map((p) => {
             const current = eligibleFor(p, airline, hub.today).ok;

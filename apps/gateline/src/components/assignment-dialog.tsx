@@ -19,7 +19,7 @@ export function AssignmentDialog({ person, onClose }: { person: Person; onClose:
 
   return (
     <Dialog open onOpenChange={(v) => !v && onClose()}>
-      <DialogContent title={`Assignment · ${personName(person)}`} description="Changes rebuild the rosters. Training records stay in TakeFlight — qualification here is a demo stand-in for that sync.">
+      <DialogContent title={`Assignment · ${personName(person)}`} description="Changes rebuild the rosters. Training records are kept by the training department.">
         <div className="grid gap-4 sm:grid-cols-2">
           <label className="block">
             <span className="text-xs font-semibold text-muted">Core team</span>

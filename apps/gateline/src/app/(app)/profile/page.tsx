@@ -60,7 +60,7 @@ export default function ProfilePage() {
       <PageHeader
         eyebrow="Account"
         title="My profile"
-        description="Keep your photo and contact details up to date. Your role, team and training are managed by your manager and TakeFlight."
+        description="Keep your photo and contact details up to date. Your role, team and training are managed by your manager and the training department."
         actions={<Button variant="outline" onClick={() => { signOut(); hub.refreshSession(); router.replace("/login"); }}><LogOut /> Sign out</Button>}
       />
 
@@ -139,7 +139,7 @@ export default function ProfilePage() {
                   </div>
                 ))}
               </dl>
-              <Badge tone="neutral" className="mt-3"><Lock className="size-3" /> Training records sync from TakeFlight</Badge>
+              <Badge tone="neutral" className="mt-3"><Lock className="size-3" /> Training records are kept by the training department</Badge>
             </CardContent>
           </Card>
         </div>

@@ -9,6 +9,7 @@ import { resolveRules, type CellEdit, type Fix, type RosterEdit, type RuleId, ty
 import { readSession, type Session } from "@nfs/auth";
 import { EVENT_TYPES, flush, isOnline, localEvents, outbox, publish, pullRecent, setForcedOffline, subscribe, clearLocalEvents } from "@nfs/events";
 import { ACTION_LABEL, newShareToken, periodDays, periodEnd, teamLabel, teamOf, type Actor, type AuditAction, type AuditEntry, type CellChange, type RosterPeriod, type TeamKey } from "./periods";
+import { ABSENCE_TYPES, absenceCovers, applyAbsences, type Absence } from "./absence";
 import { demoInbound, demoSsr, type FlightAdvice, type InboundAlert, type Notice } from "./advice";
 import { emptyState, prepareLogo, rebindPush, sendPush, pullAll, remoteEnabled, resetRemote, resizePhoto, subscribeState, uploadAirlineLogo, uploadAvatar, upsert, upsertMany, type Kind, type StateMap } from "./remote";
 
@@ -105,6 +106,11 @@ interface HubState {
   saveRoute: (r: RouteTemplate) => void;
   removeRoute: (flightNo: string) => void;
   saveCharter: (c: Charter) => void;
+  /** Sick calls, leave, maternity and other absences; absent days are unavailable to the engine. */
+  absences: Absence[];
+  absenceOn: (personId: string, date: string) => Absence | undefined;
+  saveAbsence: (a: Omit<Absence, "id" | "by" | "at"> & { id?: string }) => void;
+  removeAbsence: (id: string) => void;
   /** Special service requests and gate change for a flight (airline list merged with NFS edits). */
   adviceFor: (flightId: string) => FlightAdvice;
   saveAdvice: (a: FlightAdvice) => void;
@@ -274,10 +280,12 @@ export function HubProvider({ children }: { children: React.ReactNode }) {
       const [personId, date] = k.split("|");
       roster.push({ personId, date, shift });
     }
+    const absent = Object.values(state.absence) as Absence[];
+    const withAbsence = applyAbsences({ roster }, absent).roster;
     const adv = state.advice as Record<string, FlightAdvice>;
     const flights = Object.keys(adv).length ? generated.flights.map((f) => (adv[f.id]?.gate && adv[f.id].gate !== f.gate ? { ...f, gate: adv[f.id].gate!, gateFrom: f.gate } : f)) : generated.flights;
-    return { ...generated, people, roster, flights };
-  }, [generated, plan, overrides, state.profile, state.advice]);
+    return { ...generated, people, roster: withAbsence, flights };
+  }, [generated, plan, overrides, state.profile, state.advice, state.absence]);
   const liveIdx = React.useMemo(() => new Map(ds.roster.map((r) => [`${r.personId}|${r.date}`, r.shift])), [ds]);
 
   const people = React.useMemo(() => new Map(ds.people.map((p) => [p.id, p])), [ds]);
@@ -557,6 +565,34 @@ export function HubProvider({ children }: { children: React.ReactNode }) {
     },
     [write, state.notice, session],
   );
+  const absences = React.useMemo(() => (Object.values(state.absence) as Absence[]).sort((a, b) => b.from.localeCompare(a.from)), [state.absence]);
+  const absenceOn = React.useCallback((personId: string, date: string) => absences.find((a) => a.personId === personId && absenceCovers(a, date)), [absences]);
+  const saveAbsence = React.useCallback(
+    (a: Omit<Absence, "id" | "by" | "at"> & { id?: string }) => {
+      const full: Absence = { ...a, id: a.id ?? crypto.randomUUID(), by: session?.name ?? "", at: new Date().toISOString() };
+      const p = generated.people.find((x) => x.id === a.personId);
+      const name = p ? `${p.firstName} ${p.lastName}` : a.personId;
+      const range = a.from === a.to ? fmtDay(a.from) : `${fmtDay(a.from)} – ${fmtDay(a.to)}`;
+      const team = p?.coreAirline ?? (p?.role === "supervisor" ? (p.homeTerminal === "US" ? "SUP-US" : "SUP-INTL") : "POOL");
+      write([{ kind: "absence", id: full.id, payload: full }, entry({ action: "absence.change", summary: `${name}: ${ABSENCE_TYPES[a.type].label.toLowerCase()} · ${range}${a.note ? ` · ${a.note}` : ""}`, teams: [team], personId: a.personId, date: a.from, ref: full.id })]);
+      // A call-out for today or the next two days: tell the supervisors so they can find cover
+      if ((a.type === "sick" || a.type === "noshow" || a.type === "personal") && a.from <= addDays(clock.date, 2) && a.to >= clock.date && p) {
+        const sups = generated.people.filter((x) => x.role === "supervisor" && x.homeTerminal === p.homeTerminal).map((x) => x.id);
+        notify({ to: sups, kind: "team", title: `${ABSENCE_TYPES[a.type].label} · ${name}`, body: `${p.coreAirline ?? "Float pool"} · ${range}. Check coverage for a cover.`, href: "/coverage" });
+      }
+    },
+    [write, entry, session, generated.people, clock.date, notify],
+  );
+  const removeAbsence = React.useCallback(
+    (id: string) => {
+      const a = state.absence[id] as Absence | undefined;
+      if (!a) return;
+      const p = generated.people.find((x) => x.id === a.personId);
+      write([{ kind: "absence", id, payload: {}, deleted: true }, entry({ action: "absence.change", summary: `Removed ${ABSENCE_TYPES[a.type].label.toLowerCase()} for ${p ? `${p.firstName} ${p.lastName}` : a.personId}`, teams: p?.coreAirline ? [p.coreAirline] : [], personId: a.personId, date: a.from, ref: id })]);
+    },
+    [write, entry, state.absence, generated.people],
+  );
+
   const changeGate = React.useCallback(
     (flightId: string, gate: string, reason: string) => {
       const f = generated.flights.find((x) => x.id === flightId);
@@ -823,6 +859,10 @@ export function HubProvider({ children }: { children: React.ReactNode }) {
     removeRoute,
     saveCharter,
     removeCharter,
+    absences,
+    absenceOn,
+    saveAbsence,
+    removeAbsence,
     adviceFor,
     saveAdvice,
     changeGate,

@@ -1,12 +1,14 @@
 "use client";
 import * as React from "react";
-import { RotateCcw } from "lucide-react";
+import { RotateCcw, UserX } from "lucide-react";
 import { Avatar, cn } from "@nfs/ui";
 import { formatDate, type Person, type ShiftCode } from "@nfs/db";
 import { SHIFT_LABEL, cellFromDay, type CoverageContext } from "@nfs/rules";
 import { LEVEL_STYLE, ShiftChip } from "./ops";
+import { AbsenceChip } from "./absence";
+import { ABSENCE_TYPES, type Absence } from "@/lib/absence";
 
-export function CellMenu({ current, manual, onPick, onRevert, onClose }: { current: ShiftCode; manual?: boolean; onPick: (s: ShiftCode) => void; onRevert?: () => void; onClose: () => void }) {
+export function CellMenu({ current, manual, onPick, onRevert, onClose, onAbsence, absent }: { current: ShiftCode; manual?: boolean; onPick: (s: ShiftCode) => void; onRevert?: () => void; onClose: () => void; onAbsence?: () => void; absent?: boolean }) {
   const ref = React.useRef<HTMLDivElement>(null);
   React.useEffect(() => {
     const h = (e: MouseEvent) => {
@@ -19,13 +21,18 @@ export function CellMenu({ current, manual, onPick, onRevert, onClose }: { curre
     };
   }, [onClose]);
   return (
-    <div ref={ref} className="absolute left-1/2 top-full z-30 mt-1 w-40 -translate-x-1/2 rounded-xl border border-line bg-card p-1.5 text-left shadow-xl">
+    <div ref={ref} className="absolute left-1/2 top-full z-30 mt-1 w-48 -translate-x-1/2 rounded-xl border border-line bg-card p-1.5 text-left shadow-xl">
       {(["E", "M", "L", "O", "V"] as ShiftCode[]).map((c) => (
         <button key={c} onClick={() => onPick(c)} className={cn("flex w-full cursor-pointer items-center gap-2 rounded-md px-2 py-1.5 text-xs font-semibold transition-colors hover:bg-brand-50 hover:text-brand-700", c === current && "bg-brand-50 text-brand-700")}>
           <ShiftChip shift={c} />
           {SHIFT_LABEL[c]}
         </button>
       ))}
+      {onAbsence ? (
+        <button onClick={onAbsence} className="mt-1 flex w-full cursor-pointer items-center gap-2 border-t border-line px-2 pb-1 pt-2 text-xs font-semibold text-red-700 transition-colors hover:text-red-900">
+          <UserX className="size-3.5" /> {absent ? "Edit absence…" : "Sick, leave or absent…"}
+        </button>
+      ) : null}
       {manual && onRevert ? (
         <button onClick={onRevert} className="mt-1 flex w-full cursor-pointer items-center gap-2 border-t border-line px-2 pb-1 pt-2 text-xs font-semibold text-muted transition-colors hover:text-brand-700">
           <RotateCcw className="size-3.5" /> Back to plan
@@ -37,7 +44,7 @@ export function CellMenu({ current, manual, onPick, onRevert, onClose }: { curre
 
 /** Simple roster table: staff × 7 days, optional coverage rows and editing. */
 export function RosterGrid({
-  members, days, shiftOf, ctx, airlineCode, today, editable, onPick, highlightId, changed,
+  members, days, shiftOf, ctx, airlineCode, today, editable, onPick, highlightId, changed, absenceOf, onAbsence, privateAbsence,
 }: {
   members: Person[];
   days: string[];
@@ -49,6 +56,10 @@ export function RosterGrid({
   onPick?: (personId: string, date: string, s: ShiftCode) => void;
   highlightId?: string | null;
   changed?: (personId: string, date: string) => boolean;
+  absenceOf?: (personId: string, date: string) => Absence | undefined;
+  onAbsence?: (personId: string, date: string) => void;
+  /** Staff-facing views show absences only as "Away", never the reason. */
+  privateAbsence?: boolean;
 }) {
   const [menu, setMenu] = React.useState<string | null>(null);
   return (
@@ -83,20 +94,23 @@ export function RosterGrid({
                   const k = `${m.id}|${d}`;
                   const can = editable && (!today || d >= today);
                   const isChanged = changed?.(m.id, d);
+                  const ab = absenceOf?.(m.id, d);
                   return (
                     <td key={d} className={cn("relative px-1 py-1 text-center transition-colors", mine ? "bg-gold-100" : "group-hover:bg-brand-50/60")}>
                       <button
                         disabled={!can}
                         onClick={() => setMenu(menu === k ? null : k)}
-                        title={`${SHIFT_LABEL[s]}${isChanged ? " · changed since published" : ""}`}
+                        title={ab ? (privateAbsence ? "Away" : `${ABSENCE_TYPES[ab.type].label}${ab.note ? ` · ${ab.note}` : ""}`) : `${SHIFT_LABEL[s]}${isChanged ? " · changed since published" : ""}`}
                         className={cn("relative inline-block rounded-md transition-shadow", can && "cursor-pointer hover:ring-2 hover:ring-brand-400")}
                       >
-                        <ShiftChip shift={s} />
+                        {ab ? (privateAbsence ? <span className="inline-grid h-7 min-w-9 place-items-center rounded-md bg-surface px-1.5 text-[10px] font-bold text-muted">AWAY</span> : <AbsenceChip a={ab} />) : <ShiftChip shift={s} />}
                         {isChanged ? <span className="absolute -left-1 -top-1 size-2 rounded-full border border-card bg-gold-400" /> : null}
                       </button>
                       {menu === k && onPick ? (
                         <CellMenu
                           current={s}
+                          absent={!!ab}
+                          onAbsence={onAbsence ? () => { onAbsence(m.id, d); setMenu(null); } : undefined}
                           onPick={(c) => {
                             onPick(m.id, d, c);
                             setMenu(null);

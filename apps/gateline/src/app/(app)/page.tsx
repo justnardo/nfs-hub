@@ -199,7 +199,7 @@ function Today() {
           </CardContent>
         </Card>
         <Card>
-          <CardHeader><div><CardTitle>Training expiring in 30 days</CardTitle><CardDescription>From TakeFlight records · expired training blocks assignment</CardDescription></div><GraduationCap className="size-4 text-brand-500" /></CardHeader>
+          <CardHeader><div><CardTitle>Training expiring in 30 days</CardTitle><CardDescription>Expired training blocks assignment</CardDescription></div><GraduationCap className="size-4 text-brand-500" /></CardHeader>
           <CardContent className="space-y-2">
             {expiring.map(({ p, recs }) => (
               <div key={p.id} className="flex items-center gap-3 text-sm">

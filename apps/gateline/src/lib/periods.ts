@@ -57,6 +57,7 @@ export type AuditAction =
   | "airline.change"
   | "schedule.change"
   | "charter.change"
+  | "absence.change"
   | "rules.change"
   | "undo";
 
@@ -102,6 +103,7 @@ export const ACTION_LABEL: Record<AuditAction, string> = {
   "airline.change": "Airline / SLA changed",
   "schedule.change": "Schedule changed",
   "charter.change": "Charter flight",
+  "absence.change": "Absence recorded",
   "rules.change": "Rule settings changed",
   undo: "Undo",
 };

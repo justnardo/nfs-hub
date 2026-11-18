@@ -153,8 +153,8 @@ export default function SharedRosterPage() {
                   return (
                     <div key={date} className={cn("flex items-center gap-3 rounded-lg border px-3 py-2", date === hub.today ? "border-brand-500 bg-brand-50" : "border-line", date < hub.today && "opacity-50")}>
                       <div className="w-24 text-sm"><span className="font-semibold">{formatDate(date, { weekday: "short" })}</span> <span className="text-muted">{formatDate(date, { day: "numeric", month: "short" })}</span></div>
-                      <ShiftChip shift={s} />
-                      <span className="flex-1 text-sm">{work ? `${SHIFT_TIMES[s].start}–${SHIFT_TIMES[s].end}` : SHIFT_LABEL[s]}</span>
+                      {hub.absenceOn(person.id, date) ? <span className="inline-grid h-7 min-w-9 place-items-center rounded-md bg-surface px-1.5 text-[10px] font-bold text-muted">AWAY</span> : <ShiftChip shift={s} />}
+                      <span className="flex-1 text-sm">{hub.absenceOn(person.id, date) ? "Away · recorded by your supervisor" : work ? `${SHIFT_TIMES[s].start}–${SHIFT_TIMES[s].end}` : SHIFT_LABEL[s]}</span>
                       {changed(person.id, date) ? <Badge tone="warn">Changed</Badge> : null}
                     </div>
                   );
@@ -182,7 +182,7 @@ export default function SharedRosterPage() {
         </CardHeader>
         <CardContent className="px-2 sm:px-5">
           {person ? null : <div className="px-2">{weekTabs}</div>}
-          <RosterGrid members={members} days={days} shiftOf={(pid, d) => ctx.shift(pid, d)} today={hub.today} highlightId={person?.id} changed={changed} />
+          <RosterGrid members={members} days={days} shiftOf={(pid, d) => ctx.shift(pid, d)} today={hub.today} highlightId={person?.id} changed={changed} absenceOf={hub.absenceOn} privateAbsence />
           <p className="mt-3 px-2 text-[11px] text-muted">E Early {SHIFT_TIMES.E.start}–{SHIFT_TIMES.E.end} · M Mid {SHIFT_TIMES.M.start}–{SHIFT_TIMES.M.end} · L Late {SHIFT_TIMES.L.start}–{SHIFT_TIMES.L.end} · Gold dot: changed since publishing. Read-only — speak to your supervisor about swaps.</p>
         </CardContent>
       </Card>

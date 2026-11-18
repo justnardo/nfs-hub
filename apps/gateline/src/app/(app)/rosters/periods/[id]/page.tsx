@@ -9,6 +9,8 @@ import { addDays, formatDate, rangeDays } from "@nfs/db";
 import { CoverageContext, check } from "@nfs/rules";
 import { RequirePerm } from "@/components/guard";
 import { RosterGrid } from "@/components/roster-grid";
+import { AbsenceDialog } from "@/components/absence";
+import { applyAbsences } from "@/lib/absence";
 import { useEngineInput, useHub } from "@/lib/store";
 import { periodDays, periodEnd, periodHealth, periodShift, rosterSections, teamLabel, teamMembers, withPeriod } from "@/lib/periods";
 import { downloadRosterPdf } from "@/lib/pdf";
@@ -38,7 +40,8 @@ function Period() {
   const [confirmPublish, setConfirmPublish] = React.useState(false);
 
   // Draft: preview with the period applied. Published: it is already the live roster (plus later hand changes).
-  const input = React.useMemo(() => (p && p.status === "draft" ? withPeriod(live, p) : live), [live, p]);
+  const input = React.useMemo(() => (p && p.status === "draft" ? applyAbsences(withPeriod(live, p), hub.absences) : live), [live, p, hub.absences]);
+  const [absentCell, setAbsentCell] = React.useState<{ personId: string; date: string } | null>(null);
   const ctx = React.useMemo(() => new CoverageContext(input), [input]);
   const health = React.useMemo(() => (p ? periodHealth(input, p, hub.rules, hub.today) : null), [input, p, hub.rules, hub.today]);
 
@@ -148,6 +151,8 @@ function Period() {
               airlineCode={airline?.code}
               today={hub.today}
               editable={p.status === "draft" && editable}
+              absenceOf={hub.absenceOn}
+              onAbsence={(pid, d) => setAbsentCell({ personId: pid, date: d })}
               onPick={(pid, d, s) => hub.editPeriodCells(p.id, [{ personId: pid, date: d, shift: s }])}
               highlightId={hub.me?.id}
               changed={changedSincePublish}
@@ -194,6 +199,7 @@ function Period() {
         </Dialog>
       ) : null}
       {shareOpen ? <ShareDialog periodId={p.id} onClose={() => setShareOpen(false)} /> : null}
+      {absentCell && hub.people.get(absentCell.personId) ? <AbsenceDialog person={hub.people.get(absentCell.personId)!} date={absentCell.date} absence={hub.absenceOn(absentCell.personId, absentCell.date)} onClose={() => setAbsentCell(null)} /> : null}
     </>
   );
 }

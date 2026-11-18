@@ -1,6 +1,11 @@
 "use client";
 import * as React from "react";
-import { ChevronLeft, ChevronRight, ShieldCheck } from "lucide-react";
+import Link from "next/link";
+import { ShieldCheck } from "lucide-react";
+import { can } from "@nfs/auth";
+import { WeekStrip, type WeekState } from "@/components/week-strip";
+import { periodEnd, withPeriod } from "@/lib/periods";
+import { applyAbsences } from "@/lib/absence";
 import { Badge, Button, Card, CardContent, CardDescription, CardHeader, CardTitle, PageHeader, Stat } from "@nfs/ui";
 import { addDays, formatDate, rangeDays, weekStart } from "@nfs/db";
 import { coverageGrid, type CoverageCell } from "@nfs/rules";
@@ -12,17 +17,37 @@ export default function CoveragePage() {
   const [ws, setWs] = React.useState(() => weekStart(hub.today));
   const [cell, setCell] = React.useState<CoverageCell | null>(null);
   const days = rangeDays(ws, 7);
-  const minWs = hub.ds.windowStart;
-  const maxWs = addDays(hub.ds.windowStart, 21);
+  const maxWs = weekStart(hub.ds.horizonEnd);
+  const editable = can(hub.session?.role, "roster.edit");
+  const [withDrafts, setWithDrafts] = React.useState(true);
+  const baseEnd = hub.ds.windowDays[hub.ds.windowDays.length - 1];
+  const covers = (status: "draft" | "published", w: string) => hub.periods.filter((p) => p.status === status && p.start <= addDays(w, 6) && periodEnd(p) >= w);
+  const weekList = React.useMemo(() => {
+    const out: { ws: string; state: WeekState }[] = [];
+    for (let w = hub.ds.windowStart; w <= maxWs; w = addDays(w, 7)) {
+      const state: WeekState = addDays(w, 6) < hub.today ? "past" : covers("published", w).length ? "published" : covers("draft", w).length && editable ? "draft" : w <= baseEnd ? "rostered" : "none";
+      out.push({ ws: w, state });
+    }
+    return out;
+  }, [hub.periods, hub.ds.windowStart, maxWs, hub.today, baseEnd, editable]); // eslint-disable-line react-hooks/exhaustive-deps
+  const drafts = editable ? covers("draft", ws) : [];
+  const state = weekList.find((w) => w.ws === ws)?.state ?? "rostered";
+  const notRostered = state === "none" && !(withDrafts && drafts.length);
+  const mode = addDays(ws, 6) < hub.today ? "history" : ws > hub.today ? "predicted" : "live";
 
-  const cells = React.useMemo(
-    () => coverageGrid({ airlines: hub.ds.airlines, people: hub.ds.people, flights: hub.ds.flights, roster: hub.ds.roster, reassignments: hub.reassignments }, ws, 7),
-    [hub.ds, hub.reassignments, ws],
-  );
+  const cells = React.useMemo(() => {
+    let input = { airlines: hub.ds.airlines, people: hub.ds.people, flights: hub.ds.flights, roster: hub.ds.roster, reassignments: hub.reassignments };
+    if (withDrafts) for (const d of drafts) input = applyAbsences(withPeriod(input, d), hub.absences);
+    return coverageGrid(input, ws, 7);
+  }, [hub.ds, hub.reassignments, ws, withDrafts, drafts.map((d) => d.id).join(), hub.absences]); // eslint-disable-line react-hooks/exhaustive-deps
   // keep the open dialog in sync with the latest coverage after a placement
   const liveCell = cell ? cells.find((c) => c.airline === cell.airline && c.date === cell.date && c.shift === cell.shift) ?? null : null;
 
   const active = cells.filter((c) => c.level !== "none");
+  // Airlines with nobody rostered this week: their red is "no roster yet", not a real shortfall
+  const unrosteredAirlines = mode === "predicted" && !notRostered
+    ? hub.ds.airlines.filter((a) => !a.charter && cells.some((c) => c.airline === a.code && c.level !== "none") && cells.filter((c) => c.airline === a.code).every((c) => c.assigned === 0))
+    : [];
   const count = (l: string) => active.filter((c) => c.level === l).length;
   const upcomingGaps = active
     .filter((c) => c.level !== "green" && c.date >= hub.today)
@@ -36,15 +61,25 @@ export default function CoveragePage() {
         eyebrow="Protected coverage"
         title="SLA coverage heatmap"
         description="Trained, rostered agents per airline and shift against the airline's SLA peak demand. Untrained or expired staff never count, and agents helping another team don't count for their own."
-        actions={
-          <div className="flex items-center gap-1">
-            <Button variant="outline" size="icon" disabled={ws <= minWs} onClick={() => setWs(addDays(ws, -7))} aria-label="Previous week"><ChevronLeft /></Button>
-            <span className="min-w-40 text-center text-sm font-semibold tabular">{formatDate(ws, { day: "numeric", month: "short" })} – {formatDate(addDays(ws, 6), { day: "numeric", month: "short" })}</span>
-            <Button variant="outline" size="icon" disabled={ws >= maxWs} onClick={() => setWs(addDays(ws, 7))} aria-label="Next week"><ChevronRight /></Button>
-            <Button variant="secondary" size="sm" onClick={() => setWs(weekStart(hub.today))}>This week</Button>
-          </div>
-        }
+        actions={<Button variant="secondary" size="sm" onClick={() => setWs(weekStart(hub.today))}>This week</Button>}
       />
+      <div className="mb-4"><WeekStrip weeks={weekList} value={ws} onChange={setWs} today={hub.today} /></div>
+      <div className="mb-5 flex flex-wrap items-center gap-3 rounded-xl border border-line bg-card px-4 py-3 text-sm">
+        <Badge tone={mode === "history" ? "neutral" : mode === "live" ? "brand" : "gold"}>{mode === "history" ? "History" : mode === "live" ? "This week · live" : "Predicted"}</Badge>
+        <p className="min-w-0 flex-1 text-muted">
+          {mode === "history"
+            ? "How coverage actually stood: the roster as worked, including sick calls and covers placed."
+            : mode === "live"
+              ? "Live: changes, absences and covers update this as they happen."
+              : notRostered
+                ? "No roster yet for this week, so there's nothing to predict from. Create one to see predicted coverage."
+                : `Predicted from the ${state === "published" ? "published roster" : drafts.length && withDrafts ? "draft roster" : "engine roster"} against the flight schedule.${unrosteredAirlines.length ? ` Not rostered yet for this week: ${unrosteredAirlines.map((a) => a.code).join(", ")}, so they show as empty.` : ""}`}
+        </p>
+        {drafts.length ? (
+          <label className="flex cursor-pointer items-center gap-2 text-xs font-semibold"><input type="checkbox" checked={withDrafts} onChange={(e) => setWithDrafts(e.target.checked)} className="size-4 accent-[var(--color-brand-500)]" /> Include draft{drafts.length > 1 ? "s" : ""} ({drafts.length})</label>
+        ) : null}
+        {notRostered && editable ? <Button size="sm" asChild><Link href={`/rosters?week=${ws}`}>Create roster</Link></Button> : null}
+      </div>
       <div className="mb-5 grid grid-cols-2 gap-3 @2xl/main:grid-cols-4">
         <Stat label="Shifts at SLA" value={count("green")} tone="ok" sub={`of ${active.length} operating shifts`} />
         <Stat label="Short (amber)" value={count("amber")} tone="warn" sub="within 25% or no lead" />

@@ -123,7 +123,7 @@ function AirlineProfile() {
             </CardContent>
           </Card>
           <Card>
-            <CardHeader><div><CardTitle>Required training</CardTitle><CardDescription>Synced from TakeFlight</CardDescription></div></CardHeader>
+            <CardHeader><div><CardTitle>Required training</CardTitle><CardDescription>Courses staff must hold to work this airline</CardDescription></div></CardHeader>
             <CardContent className="flex flex-wrap gap-1.5">{a.requiredTraining.map((t) => <Badge key={t} tone="brand">{t}</Badge>)}</CardContent>
           </Card>
           {a.charter ? null : (

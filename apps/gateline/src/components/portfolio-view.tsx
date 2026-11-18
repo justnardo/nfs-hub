@@ -4,10 +4,12 @@ import Link from "next/link";
 import { Bar, BarChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import { Avatar, Badge, Button, Card, CardContent, CardDescription, CardHeader, CardTitle, PageHeader, Stat, Table, Td, Th, Tr } from "@nfs/ui";
 import { ROLE_LABEL, can } from "@nfs/auth";
-import { Pencil, UserCog } from "lucide-react";
+import { UserX, Pencil, UserCog } from "lucide-react";
 import { AssignmentDialog } from "./assignment-dialog";
 import { NFS_CONTROLLABLE, formatDate, rangeDays, type Person, type TeamPosition } from "@nfs/db";
 import { eligibleFor } from "@nfs/rules";
+import { AbsenceChip, AbsenceDialog } from "./absence";
+import { ABSENCE_TYPES, type Absence } from "@/lib/absence";
 import { useHub, personName } from "@/lib/store";
 import { AirlineChip, PersonLink, ShiftChip } from "@/components/ops";
 import { buildPortfolio } from "@/lib/portfolio";
@@ -18,6 +20,9 @@ const POS: Record<TeamPosition, string> = { lead: "Lead", gate: "Gate", jetBridg
 export function PortfolioView({ p }: { p: Person }) {
   const hub = useHub();
   const [editing, setEditing] = React.useState(false);
+  const [absence, setAbsence] = React.useState<Absence | "new" | null>(null);
+  const canAbsence = can(hub.session?.role, "roster.edit");
+  const mine = hub.absences.filter((a) => a.personId === p.id);
   const manage = can(hub.session?.role, "staff.assign");
   const map = new Map(hub.ds.airlines.map((a) => [a.code, a]));
   const flightById = React.useMemo(() => new Map(hub.ds.flights.map((f) => [f.id, f])), [hub.ds]);
@@ -43,6 +48,7 @@ export function PortfolioView({ p }: { p: Person }) {
         }
         actions={
           <div className="flex items-center gap-3">
+            {canAbsence ? <Button variant="outline" onClick={() => setAbsence("new")}><UserX /> Sick or leave</Button> : null}
             {manage ? <Button variant="outline" onClick={() => setEditing(true)}><Pencil /> Edit assignment</Button> : null}
             {hub.me?.id === p.id ? <Button variant="outline" asChild><Link href="/profile"><UserCog /> My profile</Link></Button> : null}
             <Avatar name={personName(p)} src={p.photoUrl} tone="gold" className="size-14 text-base" />
@@ -51,6 +57,7 @@ export function PortfolioView({ p }: { p: Person }) {
       />
 
       {editing ? <AssignmentDialog person={p} onClose={() => setEditing(false)} /> : null}
+      {absence ? <AbsenceDialog person={p} date={absence === "new" ? hub.today : absence.from} absence={absence === "new" ? undefined : absence} onClose={() => setAbsence(null)} /> : null}
       <div className="grid grid-cols-2 gap-3 @3xl/main:grid-cols-4">
         <Stat label="Flights worked · 28 days" value={pf.flights.length} sub={`${pf.asLead} as lead`} />
         <Stat label="On-time (D0) on their flights" value={pf.flights.length ? pct(pf.d0) : "—"} tone={pf.d0 >= 85 ? "ok" : "warn"} />
@@ -118,13 +125,30 @@ export function PortfolioView({ p }: { p: Person }) {
               {week.map((d) => (
                 <div key={d}>
                   <div className="mb-1 text-[10px] font-semibold text-muted">{formatDate(d, { weekday: "short" })}</div>
-                  <ShiftChip shift={roster.get(d) ?? "O"} />
+                  {hub.absenceOn(p.id, d) ? <AbsenceChip a={hub.absenceOn(p.id, d)!} /> : <ShiftChip shift={roster.get(d) ?? "O"} />}
                 </div>
               ))}
             </CardContent>
           </Card>
+          {canAbsence || mine.length ? (
+            <Card>
+              <CardHeader><div><CardTitle>Absences</CardTitle><CardDescription>Sick calls, leave and other time away</CardDescription></div></CardHeader>
+              <CardContent className="space-y-1.5">
+                {mine.length === 0 ? <p className="text-sm text-muted">None recorded.</p> : null}
+                {mine.slice(0, 8).map((a) => (
+                  <button key={a.id} disabled={!canAbsence} onClick={() => setAbsence(a)} className="flex w-full items-center gap-2 rounded-lg border border-line p-2 text-left text-sm transition-colors enabled:cursor-pointer enabled:hover:border-brand-400 enabled:hover:bg-brand-50">
+                    <AbsenceChip a={a} />
+                    <span className="min-w-0 flex-1">
+                      <span className="block truncate font-semibold">{ABSENCE_TYPES[a.type].label}</span>
+                      <span className="block truncate text-xs text-muted">{a.from === a.to ? formatDate(a.from) : `${formatDate(a.from)} – ${formatDate(a.to)}`}{a.note ? ` · ${a.note}` : ""}</span>
+                    </span>
+                  </button>
+                ))}
+              </CardContent>
+            </Card>
+          ) : null}
           <Card>
-            <CardHeader><div><CardTitle>Training records</CardTitle><CardDescription>From TakeFlight</CardDescription></div></CardHeader>
+            <CardHeader><div><CardTitle>Training records</CardTitle><CardDescription>Kept by the training department</CardDescription></div></CardHeader>
             <CardContent className="space-y-2">
               {p.training.map((t) => {
                 const expired = t.expires < hub.today;
