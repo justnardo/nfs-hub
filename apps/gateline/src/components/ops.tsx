@@ -35,6 +35,7 @@ export function AirlineChip({ airline, size = "sm" }: { airline: Airline; size?:
 const STATUS_TONE: Record<FlightStatus, "neutral" | "brand" | "ok" | "warn" | "bad" | "gold" | "dark"> = {
   Scheduled: "neutral",
   "Check-in open": "brand",
+  "Check-in closed": "neutral",
   Boarding: "gold",
   "Final call": "gold",
   "Door closed": "dark",

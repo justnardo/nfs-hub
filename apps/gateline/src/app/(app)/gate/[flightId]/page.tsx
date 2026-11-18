@@ -2,18 +2,21 @@
 import * as React from "react";
 import Link from "next/link";
 import { useParams } from "next/navigation";
-import { AlertTriangle, ArrowLeft, Camera, Check, CheckCircle2, CloudOff, Pencil, Plus, Search, Send, Undo2, Users, Wand2, X } from "lucide-react";
+import { Accessibility, Siren, AlertTriangle, ArrowLeft, ArrowRight, Camera, Check, CheckCircle2, CloudOff, DoorOpen, Luggage, Pencil, Plus, Search, Send, Undo2, Users, Wand2, X } from "lucide-react";
 import { Avatar, Badge, Button, Card, Dialog, DialogContent, Input, Label, Select, Textarea, cn } from "@nfs/ui";
 import {
   GATE_EVENT_LABEL, GATE_EVENT_ORDER, NFS_CONTROLLABLE, fromMinutes, shiftForStd, toMinutes,
-  type Airline, type DelayCause, type DiscrepancyType, type Flight, type GateEventType, type GateLog, type Person, type TeamMember, type TeamPosition,
+  type Airline, type DelayCause, type Discrepancy, type DiscrepancyType, type Flight, type GateEventType, type GateLog, type Person, type SsrCode, type SsrItem, type TeamMember, type TeamPosition,
 } from "@nfs/db";
 import { eligibleFor } from "@nfs/rules";
-import { EVENT_TYPES } from "@nfs/events";
+import { timingsFor } from "@nfs/db";
+import { EVENT_TYPES, publish } from "@nfs/events";
 import { deriveStatus } from "@nfs/flights";
 import { useHub, personName } from "@/lib/store";
 import { RequirePerm } from "@/components/guard";
 import { AirlineChip, FlightStatusBadge } from "@/components/ops";
+import { SSR_CODES, SSR_LABEL, WHEELCHAIR } from "@/lib/advice";
+import { can } from "@nfs/auth";
 
 const CAUSES: DelayCause[] = [
   "Late inbound aircraft", "Airline operations", "Weather", "ATC / airport", "Ground equipment", "Catering",
@@ -78,22 +81,32 @@ function GateLogScreen() {
   const [discOpen, setDiscOpen] = React.useState<DiscrepancyType | null>(null);
   const [editing, setEditing] = React.useState<GateEventType | null>(null);
   const [photos, setPhotos] = React.useState<Record<string, string>>({});
+  const [gateOpen, setGateOpen] = React.useState(false);
+  const [ssrOpen, setSsrOpen] = React.useState(false);
   const paxRef = React.useRef<HTMLDivElement>(null);
   const nextRef = React.useRef<HTMLDivElement | null>(null);
   const [nextVisible, setNextVisible] = React.useState(true);
   React.useEffect(() => {
-    const el = nextRef.current;
-    if (!el || typeof IntersectionObserver === "undefined") return;
-    const io = new IntersectionObserver(([e]) => setNextVisible(e.isIntersecting), { rootMargin: "-80px 0px -120px 0px" });
-    io.observe(el);
-    return () => io.disconnect();
+    const check = () => {
+      const el = nextRef.current;
+      if (!el) return setNextVisible(false);
+      const r = el.getBoundingClientRect();
+      setNextVisible(r.bottom > 80 && r.top < window.innerHeight - 140);
+    };
+    check();
+    window.addEventListener("scroll", check, { passive: true });
+    window.addEventListener("resize", check);
+    return () => {
+      window.removeEventListener("scroll", check);
+      window.removeEventListener("resize", check);
+    };
   });
 
   if (!flight) return <p className="text-sm text-muted">Flight not found.</p>;
   const airline = hub.ds.airlines.find((a) => a.code === flight.airline)!;
   const shift = shiftForStd(flight.std);
   const existing = hub.logByFlight.get(flight.id);
-  const status = deriveStatus(flight, existing, hub.today, hub.nowMin);
+  const status = deriveStatus(flight, existing, hub.today, hub.nowMin, timingsFor(hub.ds.airlines.find((a) => a.code === flight.airline)));
   const onShift = new Set(hub.ds.roster.filter((r) => r.date === flight.date && (r.shift === shift || r.shift === "M")).map((r) => r.personId));
 
   // Who else is working a flight within 90 minutes of this one
@@ -132,6 +145,20 @@ function GateLogScreen() {
     };
   const log = base();
   const filed = log.status === "filed";
+  const advice = hub.adviceFor(flight.id);
+  const alerts = hub.alertsFor(flight.id);
+  const wchAdvised = advice.ssr.filter((x) => WHEELCHAIR.includes(x.code)).length + alerts.reduce((n, a) => n + (a.wheelchairs ?? 0), 0);
+  const canGate = can(hub.session?.role, "gate.log");
+  const offloadDone = (d: Discrepancy) => hub.events.find((e) => e.type === EVENT_TYPES.offloadDone && e.payload.discrepancyId === d.id);
+  const toggleSsr = (item: SsrItem) => {
+    const ssr = advice.ssr.map((x) => (x.id === item.id ? { ...x, handled: !x.handled, handledAt: !x.handled ? nowHHMM : undefined } : x));
+    hub.saveAdvice({ ...advice, ssr });
+  };
+  const tm = timingsFor(airline);
+  const stdMin = toMinutes(flight.std);
+  const at = (before: number) => fromMinutes(Math.max(0, stdMin - before));
+  const isToday = flight.date === hub.today;
+  const boardingDue = isToday && !filed && !log.events.boarding_start && !log.events.pushback && hub.nowMin >= stdMin - tm.boardingStarts;
 
   const recompute = (l: GateLog): GateLog => {
     const push = l.events.pushback;
@@ -192,16 +219,24 @@ function GateLogScreen() {
             <FlightStatusBadge status={status.status} />
           </div>
           <div className="mt-3 grid grid-cols-4 gap-2 text-center">
-            {[
-              ["To", flight.destination],
-              ["Gate", flight.gate],
-              ["STD", flight.std],
-            ].map(([k, v]) => (
-              <div key={k} className="rounded-lg bg-white/[0.06] py-1.5">
-                <div className="text-[10px] font-semibold uppercase tracking-wide text-ink-300">{k}</div>
-                <div className="font-display text-base font-semibold tabular">{v}</div>
-              </div>
-            ))}
+            <div className="rounded-lg bg-white/[0.06] py-1.5">
+              <div className="text-[10px] font-semibold uppercase tracking-wide text-ink-300">To</div>
+              <div className="font-display text-base font-semibold tabular">{flight.destination}</div>
+            </div>
+            <button
+              type="button"
+              disabled={!canGate || filed}
+              onClick={() => setGateOpen(true)}
+              title={canGate && !filed ? "Change gate" : undefined}
+              className={cn("rounded-lg py-1.5 transition-colors enabled:cursor-pointer", flight.gateFrom ? "bg-gold-500/25 enabled:hover:bg-gold-500/35" : "bg-white/[0.06] enabled:hover:bg-white/[0.1]")}
+            >
+              <div className="text-[10px] font-semibold uppercase tracking-wide text-ink-300">Gate</div>
+              <div className={cn("font-display text-base font-semibold tabular", flight.gateFrom && "text-gold-400")}>{flight.gate}</div>
+            </button>
+            <div className="rounded-lg bg-white/[0.06] py-1.5">
+              <div className="text-[10px] font-semibold uppercase tracking-wide text-ink-300">STD</div>
+              <div className="font-display text-base font-semibold tabular">{flight.std}</div>
+            </div>
             <button
               type="button"
               onClick={() => paxRef.current?.scrollIntoView({ behavior: "smooth", block: "center" })}
@@ -215,7 +250,26 @@ function GateLogScreen() {
             {flight.destinationName} · {flight.aircraft} · inbound STA {flight.sta}
             {flight.date === hub.today && !log.events.pushback && minsToStd > 0 ? <> · <span className="font-semibold text-white">STD in {minsToStd >= 60 ? `${Math.floor(minsToStd / 60)}h ${minsToStd % 60}m` : `${minsToStd} min`}</span></> : null}
           </p>
+          <div className="mt-3 grid grid-cols-3 gap-1 rounded-lg bg-white/[0.04] p-1 text-center text-[11px]">
+            {[
+              ["Check-in", `${at(tm.checkInOpens)}–${at(tm.checkInCloses)}`, isToday && hub.nowMin >= stdMin - tm.checkInOpens && hub.nowMin < stdMin - tm.checkInCloses],
+              ["Boarding from", at(tm.boardingStarts), !!log.events.boarding_start && !log.events.boarding_close],
+              ["Gate closes", at(tm.gateCloses), !!log.events.boarding_close && !log.events.door_close],
+            ].map(([k, v, on]) => (
+              <div key={String(k)} className={cn("rounded-md py-1", on && "bg-brand-500/30")}>
+                <div className="text-ink-300">{k}</div>
+                <div className="font-semibold tabular text-white">{v}</div>
+              </div>
+            ))}
+          </div>
           {flight.adhoc ? <p className="mt-1 text-xs text-gold-400">Charter · {flight.adhoc.operator}{flight.adhoc.notes ? ` · ${flight.adhoc.notes}` : ""}</p> : null}
+          {flight.gateFrom ? (
+            <div className="mt-3 flex items-center gap-2 rounded-lg bg-gold-500 px-3 py-2 text-sm font-semibold text-ink-900">
+              <DoorOpen className="size-4 shrink-0" />
+              <span className="min-w-0 flex-1">Gate changed {flight.gateFrom} <ArrowRight className="inline size-3.5" /> {flight.gate}{advice.gateReason ? ` · ${advice.gateReason}` : ""}</span>
+              {advice.gateChangedAt ? <span className="shrink-0 text-xs font-medium">{new Date(advice.gateChangedAt).toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit", timeZone: "America/Nassau" })}</span> : null}
+            </div>
+          ) : null}
         </div>
 
         {/* Team by position */}
@@ -252,11 +306,71 @@ function GateLogScreen() {
         </div>
       </Card>
 
+      {/* Issues on the inbound flight, posted by operations in Rampline */}
+      {alerts.map((a) => {
+        const ack = advice.alertAcks?.[a.id];
+        const time = new Date(a.at).toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit", timeZone: "America/Nassau" });
+        return (
+          <Card key={a.id} className={cn("mt-4 overflow-hidden", a.urgent && !ack ? "border-red-300" : "border-line")}>
+            <div className={cn("flex items-center gap-2 px-4 py-2 text-xs font-bold uppercase tracking-wide", a.urgent && !ack ? "bg-bad text-white" : "bg-bad-soft text-red-800")}>
+              <Siren className="size-4" /> Inbound alert · {a.category}
+              <span className="ml-auto font-semibold normal-case tracking-normal">{time}</span>
+            </div>
+            <div className="space-y-2 p-4">
+              <p className="text-sm">{a.message}</p>
+              {a.wheelchairs ? <p className="flex items-center gap-1.5 text-sm font-semibold"><Accessibility className="size-4 text-brand-600" /> {a.wheelchairs} wheelchair{a.wheelchairs > 1 ? "s" : ""} at the aircraft door on arrival (STA {flight.sta})</p> : null}
+              <p className="text-xs text-muted">From {a.by} in Rampline</p>
+              {ack ? (
+                <p className="flex items-center gap-1.5 text-xs font-semibold text-green-800"><CheckCircle2 className="size-3.5" /> Acknowledged by {ack.by} at {new Date(ack.at).toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit", timeZone: "America/Nassau" })} · Rampline can see this</p>
+              ) : (
+                <Button className="h-11 w-full" variant={a.urgent ? "danger" : "primary"} onClick={() => hub.ackAlert(flight.id, a.id)}><Check /> Acknowledge for passenger services</Button>
+              )}
+            </div>
+          </Card>
+        );
+      })}
+
+      {/* Special assistance, pre-advised */}
+      <Card className="mt-4 p-4">
+        <div className="flex items-center justify-between gap-2">
+          <div>
+            <p className="flex items-center gap-2 text-sm font-semibold"><Accessibility className="size-4 text-brand-600" /> Special assistance</p>
+            <p className="text-xs text-muted">Pre-advised for this flight{advice.ssr.length ? ` · ${advice.ssr.filter((x) => x.handled).length} of ${advice.ssr.length} done` : ""}</p>
+          </div>
+          {!filed ? <Button variant="secondary" size="sm" onClick={() => setSsrOpen(true)}><Plus /> Add</Button> : null}
+        </div>
+        {advice.ssr.length === 0 ? <p className="mt-2 text-xs text-muted">No requests pre-advised for this flight.</p> : (
+          <div className="mt-3 space-y-1.5">
+            {advice.ssr.map((x) => (
+              <button
+                key={x.id}
+                type="button"
+                disabled={filed}
+                onClick={() => toggleSsr(x)}
+                className={cn("flex w-full items-center gap-3 rounded-lg border p-2.5 text-left transition-colors enabled:cursor-pointer", x.handled ? "border-green-200 bg-ok-soft/60" : "border-line enabled:hover:border-brand-400 enabled:hover:bg-brand-50")}
+              >
+                <span className={cn("grid h-7 min-w-14 place-items-center rounded-md px-1.5 font-display text-[11px] font-bold", x.handled ? "bg-ok text-white" : WHEELCHAIR.includes(x.code) ? "bg-brand-100 text-brand-800" : "bg-gold-100 text-gold-700")}>{x.code}</span>
+                <span className="min-w-0 flex-1">
+                  <span className="block truncate text-sm font-semibold">{x.name}{x.seat ? <span className="font-normal text-muted"> · {x.seat}</span> : null}</span>
+                  <span className="block truncate text-xs text-muted">{SSR_LABEL[x.code]}{x.note ? ` · ${x.note}` : ""}{x.source === "nfs" ? " · added at the gate" : ""}</span>
+                </span>
+                {x.handled ? <span className="flex shrink-0 items-center gap-1 text-xs font-semibold text-green-800"><Check className="size-3.5" />{x.handledAt}</span> : <span className="shrink-0 text-xs font-semibold text-brand-600">Mark done</span>}
+              </button>
+            ))}
+          </div>
+        )}
+      </Card>
+
       {/* Timeline */}
       <div className="mt-4 flex items-center justify-between px-1">
         <p className="text-sm font-semibold">Turnaround</p>
         <p className="text-xs text-muted">{logged} of {GATE_EVENT_ORDER.length} logged</p>
       </div>
+      {boardingDue ? (
+        <div className="mt-2 flex items-center gap-2 rounded-lg border border-amber-200 bg-warn-soft px-3 py-2 text-xs font-semibold text-amber-900">
+          <AlertTriangle className="size-3.5 shrink-0" /> {airline.name} boarding was due at {at(tm.boardingStarts)}. Tap Boarding start when it begins.
+        </div>
+      ) : null}
       <div className="mt-2 space-y-2">
         {GATE_EVENT_ORDER.map((ev) => {
           const at = log.events[ev];
@@ -304,7 +418,7 @@ function GateLogScreen() {
       <div ref={paxRef} className="scroll-mt-20"><Card className="mt-4 space-y-4 p-4">
         <div>
           <p className="text-sm font-semibold">Passenger figures</p>
-          <p className="text-xs text-muted">Booked and checked in come from the airline&apos;s departure control system (DCS) or load sheet at check-in close. Once NFS connects the airline DCS they fill in on their own.</p>
+          <p className="text-xs text-muted">Enter booked and checked in at check-in close, then boarded at door close.</p>
         </div>
         <div className="grid grid-cols-3 gap-2.5">
           {([
@@ -360,6 +474,12 @@ function GateLogScreen() {
             )}
           </div>
         </div>
+        {log.wheelchairs != null && log.wheelchairs > wchAdvised ? (
+          <div className="flex items-center justify-between gap-2 rounded-lg border border-amber-200 bg-warn-soft p-2.5 text-xs text-amber-900">
+            <span>{log.wheelchairs - wchAdvised} more wheelchair{log.wheelchairs - wchAdvised > 1 ? "s" : ""} than pre-advised ({wchAdvised}).</span>
+            {!filed && !log.discrepancies.some((d) => d.type === "Wheelchair request not pre-advised") ? <Button size="sm" variant="secondary" onClick={() => setDiscOpen("Wheelchair request not pre-advised")}>Log it</Button> : null}
+          </div>
+        ) : null}
       </Card></div>
 
       {delayMin > 0 ? (
@@ -394,6 +514,17 @@ function GateLogScreen() {
               <div className="min-w-0 flex-1">
                 <p className="text-sm font-semibold">{d.type} <span className="font-normal text-muted">· {d.at}</span>{d.hasPhoto ? <Camera className="ml-1 inline size-3.5 text-muted" /> : null}</p>
                 <p className="text-xs text-muted">{d.note}</p>
+                {d.bags ? (
+                  <p className="mt-1 flex flex-wrap items-center gap-1.5 text-xs">
+                    <Luggage className="size-3.5 text-brand-600" />
+                    <span className="font-semibold">{d.bags} bag{d.bags > 1 ? "s" : ""} off{d.seat ? ` · seat ${d.seat}` : ""}{d.bagTags ? ` · tags ${d.bagTags}` : ""}</span>
+                    {offloadDone(d) ? (
+                      <Badge tone="ok">Ramp: bags off {String(offloadDone(d)!.payload.at ?? "")}</Badge>
+                    ) : d.rampHandoff ? (
+                      <Badge tone="warn">Sent to Rampline {d.rampHandoff.sentAt} · waiting for ramp</Badge>
+                    ) : null}
+                  </p>
+                ) : null}
               </div>
             </div>
           ))}
@@ -446,17 +577,50 @@ function GateLogScreen() {
         onSave={(team) => {
           const lead = team.find((t) => t.position === "lead");
           hub.saveLog({ ...log, team, leadId: lead?.personId ?? log.leadId }, { type: EVENT_TYPES.gateTeam, payload: { team } });
+          // Alert everyone newly put on this flight (or given a different job on it)
+          const before = new Map<string, string>();
+          for (const m of log.team) before.set(m.personId, [before.get(m.personId), m.position].filter(Boolean).join("+"));
+          const after = new Map<string, string>();
+          for (const m of team) after.set(m.personId, [after.get(m.personId), m.position].filter(Boolean).join("+"));
+          const changed = [...after.entries()].filter(([id, pos]) => before.get(id) !== pos);
+          for (const [id, pos] of changed) {
+            const person = hub.people.get(id);
+            const jobs = pos.split("+").map((x) => POS_LABEL[x as TeamPosition]).join(" then ");
+            hub.notify({
+              to: [id],
+              kind: "team",
+              title: `You're on ${flight.flightNo} · ${jobs}`,
+              body: `${flight.destinationName} · STD ${flight.std} · Gate ${flight.gate}${flight.date !== hub.today ? ` · ${flight.date}` : ""}`,
+              href: person?.role === "lead" ? `/gate/${flight.id}` : "/me",
+            });
+          }
           setTeamOpen(null);
         }}
       />
+      {gateOpen ? <GateDialog flight={flight} onClose={() => setGateOpen(false)} onSave={(g, reason) => { hub.changeGate(flight.id, g, reason); setGateOpen(false); }} /> : null}
+      {ssrOpen ? (
+        <SsrDialog
+          onClose={() => setSsrOpen(false)}
+          onSave={(item) => {
+            hub.saveAdvice({ ...advice, ssr: [...advice.ssr, item] });
+            hub.notify({ to: log.team.filter((t) => t.position === "lead" || t.position === "gate").map((t) => t.personId), kind: "ssr", title: `${item.code} added · ${flight.flightNo}`, body: `${item.name}${item.seat ? ` · ${item.seat}` : ""} · ${SSR_LABEL[item.code]}`, href: `/gate/${flight.id}` });
+            setSsrOpen(false);
+          }}
+        />
+      ) : null}
       <DiscrepancyDialog
         open={discOpen !== null}
         initialType={discOpen ?? "Pax count mismatch"}
         onOpenChange={(v) => !v && setDiscOpen(null)}
         nowHHMM={nowHHMM}
-        onSave={(d, photo) => {
-          if (photo) setPhotos((p) => ({ ...p, [d.id]: photo }));
-          hub.saveLog({ ...log, discrepancies: [...log.discrepancies, d] }, { type: EVENT_TYPES.gateDiscrepancy, payload: { type: d.type, at: d.at } });
+        onSave={(d0, photo) => {
+          if (photo) setPhotos((p) => ({ ...p, [d0.id]: photo }));
+          const d: Discrepancy = d0.bags ? { ...d0, rampHandoff: { sentAt: nowHHMM } } : d0;
+          hub.saveLog({ ...log, discrepancies: [...log.discrepancies, d] }, { type: EVENT_TYPES.gateDiscrepancy, payload: { type: d.type, at: d.at, bags: d.bags ?? 0 } });
+          if (d.bags) {
+            // Ramp pulls the bags: Rampline shows it on the turn and replies with ramp.offload_done
+            void publishOffload(flight, d);
+          }
           setDiscOpen(null);
         }}
       />
@@ -646,12 +810,90 @@ function TeamDialog({ position, onClose, team, onSave, candidates, airline, flig
   );
 }
 
+/** Hand-off to Rampline: the ramp team sees the bags to pull on the turn and confirms when they're off. */
+function publishOffload(flight: Flight, d: Discrepancy) {
+  return publish({
+    module: "gateline",
+    type: EVENT_TYPES.bagOffload,
+    payload: { flightId: flight.id, flightNo: flight.flightNo, date: flight.date, std: flight.std, gate: flight.gate, discrepancyId: d.id, reason: d.type, bags: d.bags, bagTags: d.bagTags ?? null, seat: d.seat ?? null, at: d.at },
+  });
+}
+
+const GATE_REASONS = ["Aircraft swap", "Gate conflict", "Airport operations request", "Jet bridge out of service", "Late inbound", "Other"];
+
+function GateDialog({ flight, onClose, onSave }: { flight: Flight; onClose: () => void; onSave: (gate: string, reason: string) => void }) {
+  const [gate, setGate] = React.useState(flight.gate);
+  const [reason, setReason] = React.useState(GATE_REASONS[0]);
+  const valid = /^[A-Z]?\d{1,3}[A-Z]?$/.test(gate) && gate !== flight.gate;
+  return (
+    <Dialog open onOpenChange={(v) => !v && onClose()}>
+      <DialogContent title={`Change gate · ${flight.flightNo}`} description="Everyone on the flight's team and the terminal supervisors get an alert straight away, on their phones too.">
+        <div className="grid grid-cols-[auto_1fr] items-end gap-3">
+          <div>
+            <Label className="text-xs">Now</Label>
+            <div className="mt-1 grid h-12 w-20 place-items-center rounded-lg bg-surface font-display text-lg font-semibold">{flight.gate}</div>
+          </div>
+          <div>
+            <Label htmlFor="newgate" className="text-xs">New gate</Label>
+            <Input id="newgate" autoFocus value={gate} onChange={(e) => setGate(e.target.value.toUpperCase().trim())} className="mt-1 h-12 text-lg font-semibold" placeholder="C34" />
+          </div>
+        </div>
+        <Label htmlFor="greason" className="mt-3 block text-xs">Reason</Label>
+        <Select id="greason" value={reason} onChange={(e) => setReason(e.target.value)} className="mt-1 h-11 w-full">
+          {GATE_REASONS.map((r) => <option key={r}>{r}</option>)}
+        </Select>
+        <div className="mt-4 flex justify-end gap-2">
+          <Button variant="outline" onClick={onClose}>Cancel</Button>
+          <Button disabled={!valid} onClick={() => onSave(gate, reason === "Other" ? "" : reason)}><DoorOpen /> Change gate and alert team</Button>
+        </div>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+function SsrDialog({ onClose, onSave }: { onClose: () => void; onSave: (x: SsrItem) => void }) {
+  const [code, setCode] = React.useState<SsrCode>("WCHR");
+  const [name, setName] = React.useState("");
+  const [seat, setSeat] = React.useState("");
+  const [note, setNote] = React.useState("");
+  return (
+    <Dialog open onOpenChange={(v) => !v && onClose()}>
+      <DialogContent title="Add special assistance request" description="For a request that wasn't pre-advised. The lead and gate agents are alerted.">
+        <div className="space-y-3">
+          <div>
+            <Label htmlFor="ssrc" className="text-xs">Request</Label>
+            <Select id="ssrc" value={code} onChange={(e) => setCode(e.target.value as SsrCode)} className="mt-1 h-11 w-full">
+              {SSR_CODES.map((c) => <option key={c} value={c}>{c} · {SSR_LABEL[c]}</option>)}
+            </Select>
+          </div>
+          <div className="grid grid-cols-[1fr_6rem] gap-3">
+            <div><Label htmlFor="ssrn" className="text-xs">Passenger (surname/initial)</Label><Input id="ssrn" value={name} onChange={(e) => setName(e.target.value.toUpperCase())} placeholder="ROLLE/K" className="mt-1" /></div>
+            <div><Label htmlFor="ssrs" className="text-xs">Seat</Label><Input id="ssrs" value={seat} onChange={(e) => setSeat(e.target.value.toUpperCase())} placeholder="12C" className="mt-1" /></div>
+          </div>
+          <div><Label htmlFor="ssrnote" className="text-xs">Note</Label><Input id="ssrnote" value={note} onChange={(e) => setNote(e.target.value)} placeholder="e.g. own chair, gate-check at the door" className="mt-1" /></div>
+        </div>
+        <div className="mt-4 flex justify-end gap-2">
+          <Button variant="outline" onClick={onClose}>Cancel</Button>
+          <Button disabled={name.trim().length < 2} onClick={() => onSave({ id: crypto.randomUUID(), code, name: name.trim(), seat: seat.trim() || undefined, note: note.trim() || undefined, source: "nfs" })}>Add request</Button>
+        </div>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
 function DiscrepancyDialog({ open, onOpenChange, onSave, nowHHMM, initialType }: { open: boolean; onOpenChange: (v: boolean) => void; nowHHMM: string; initialType: DiscrepancyType; onSave: (d: GateLog["discrepancies"][number], photo?: string) => void }) {
   const [type, setType] = React.useState<DiscrepancyType>("Pax count mismatch");
   const [note, setNote] = React.useState("");
   const [photo, setPhoto] = React.useState<string | undefined>();
+  const [bags, setBags] = React.useState(0);
+  const [tags, setTags] = React.useState("");
+  const [seat, setSeat] = React.useState("");
+  const bagType = type === "No-show" || type === "Bag offload" || type === "Denied boarding";
   React.useEffect(() => {
     if (open) {
+      setBags(0);
+      setTags("");
+      setSeat("");
       setNote("");
       setType(initialType);
       setPhoto(undefined);
@@ -669,8 +911,23 @@ function DiscrepancyDialog({ open, onOpenChange, onSave, nowHHMM, initialType }:
           </div>
           <div>
             <Label htmlFor="dnote">What happened</Label>
-            <Textarea id="dnote" value={note} onChange={(e) => setNote(e.target.value)} className="mt-1" placeholder="e.g. WCHR not on PNL, chair sourced in 8 min" />
+            <Textarea id="dnote" value={note} onChange={(e) => setNote(e.target.value)} className="mt-1" placeholder="e.g. WCHR not pre-advised, chair sourced in 8 min" />
           </div>
+          {bagType ? (
+            <div className="rounded-lg border border-line bg-surface p-3">
+              <p className="flex items-center gap-1.5 text-xs font-semibold"><Luggage className="size-3.5 text-brand-600" /> Checked bags to come off</p>
+              <div className="mt-2 grid grid-cols-[6.5rem_1fr_5rem] gap-2">
+                <div className="flex h-11 items-center rounded-lg border border-line bg-card">
+                  <button type="button" onClick={() => setBags(Math.max(0, bags - 1))} className="h-full w-8 cursor-pointer rounded-l-lg text-lg font-semibold text-muted transition-colors hover:bg-brand-50 hover:text-brand-700" aria-label="Fewer bags">−</button>
+                  <span className="flex-1 text-center font-display text-lg font-semibold tabular">{bags}</span>
+                  <button type="button" onClick={() => setBags(Math.min(20, bags + 1))} className="h-full w-8 cursor-pointer rounded-r-lg text-lg font-semibold text-muted transition-colors hover:bg-brand-50 hover:text-brand-700" aria-label="More bags">+</button>
+                </div>
+                <Input value={tags} onChange={(e) => setTags(e.target.value)} placeholder="Bag tag numbers" className="h-11" disabled={!bags} />
+                <Input value={seat} onChange={(e) => setSeat(e.target.value.toUpperCase())} placeholder="Seat" className="h-11" />
+              </div>
+              <p className="mt-1.5 text-[11px] text-muted">{bags ? "Sent to the ramp team in Rampline as soon as you add this." : "No checked bags means nothing for the ramp to pull."}</p>
+            </div>
+          ) : null}
           <label className="flex cursor-pointer items-center gap-3 rounded-lg border border-dashed border-line p-3 text-sm text-muted transition-colors hover:border-brand-400 hover:bg-brand-50 hover:text-brand-700">
             {photo ? <img src={photo} alt="" className="size-12 rounded-md object-cover" /> : <Camera className="size-5" />}
             {photo ? "Photo attached · tap to replace" : "Add photo (optional)"}
@@ -690,7 +947,7 @@ function DiscrepancyDialog({ open, onOpenChange, onSave, nowHHMM, initialType }:
           </label>
           <Button
             className="h-12 w-full"
-            onClick={() => onSave({ id: crypto.randomUUID(), type, note: note.trim() || type, at: nowHHMM, hasPhoto: !!photo }, photo)}
+            onClick={() => onSave({ id: crypto.randomUUID(), type, note: note.trim() || type, at: nowHHMM, hasPhoto: !!photo, ...(bagType && bags ? { bags, bagTags: tags.trim() || undefined } : {}), ...(bagType && seat.trim() ? { seat: seat.trim() } : {}) }, photo)}
           >
             Add to record
           </Button>

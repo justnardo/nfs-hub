@@ -1,9 +1,10 @@
 "use client";
 import * as React from "react";
 import Link from "next/link";
-import { ChevronRight, Smartphone } from "lucide-react";
+import { Siren, ChevronRight, Smartphone } from "lucide-react";
 import { Badge, Card, PageHeader, TabsList, TabsTrigger, Tabs, cn } from "@nfs/ui";
 import { formatDate, shiftForStd, toMinutes } from "@nfs/db";
+import { timingsFor } from "@nfs/db";
 import { deriveStatus } from "@nfs/flights";
 import { useHub } from "@/lib/store";
 import { RequirePerm } from "@/components/guard";
@@ -45,7 +46,7 @@ function GateList() {
       <div className="space-y-2.5">
         {flights.map((f) => {
           const log = hub.logByFlight.get(f.id);
-          const s = deriveStatus(f, log, hub.today, hub.nowMin);
+          const s = deriveStatus(f, log, hub.today, hub.nowMin, timingsFor(hub.ds.airlines.find((a) => a.code === f.airline)));
           const a = airlines.get(f.airline)!;
           const tapped = log ? Object.keys(log.events).length : 0;
           const isNext = nextUp?.id === f.id;
@@ -59,10 +60,10 @@ function GateList() {
                 <div className="min-w-0 flex-1">
                   <div className="flex items-center gap-2">
                     <AirlineChip airline={a} />
-                    <span className="font-semibold tabular">{f.flightNo}</span>
+                    <span className="font-semibold tabular">{f.flightNo}</span>{hub.alertsFor(f.id).length ? <Siren aria-label="Inbound alert from Rampline" className="size-4 shrink-0 text-bad" /> : null}
                     {isNext ? <Badge tone="brand">Next</Badge> : null}
                   </div>
-                  <p className="mt-0.5 truncate text-xs text-muted">{f.destinationName} · Gate {f.gate} · {f.aircraft}</p>
+                  <p className="mt-0.5 truncate text-xs text-muted">{f.destinationName} · Gate {f.gateFrom ? <span className="font-semibold text-gold-700">{f.gate} (was {f.gateFrom})</span> : f.gate} · {f.aircraft}</p>
                   <div className="mt-1.5 flex items-center gap-2">
                     <FlightStatusBadge status={s.status} />
                     <span className="text-[11px] text-muted">{tapped}/7 logged{log?.status === "filed" ? " · filed" : ""}</span>

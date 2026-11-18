@@ -9,7 +9,8 @@ import { resolveRules, type CellEdit, type Fix, type RosterEdit, type RuleId, ty
 import { readSession, type Session } from "@nfs/auth";
 import { EVENT_TYPES, flush, isOnline, localEvents, outbox, publish, pullRecent, setForcedOffline, subscribe, clearLocalEvents } from "@nfs/events";
 import { ACTION_LABEL, newShareToken, periodDays, periodEnd, teamLabel, teamOf, type Actor, type AuditAction, type AuditEntry, type CellChange, type RosterPeriod, type TeamKey } from "./periods";
-import { emptyState, prepareLogo, pullAll, remoteEnabled, resetRemote, resizePhoto, subscribeState, uploadAirlineLogo, uploadAvatar, upsert, upsertMany, type Kind, type StateMap } from "./remote";
+import { demoInbound, demoSsr, type FlightAdvice, type InboundAlert, type Notice } from "./advice";
+import { emptyState, prepareLogo, rebindPush, sendPush, pullAll, remoteEnabled, resetRemote, resizePhoto, subscribeState, uploadAirlineLogo, uploadAvatar, upsert, upsertMany, type Kind, type StateMap } from "./remote";
 
 /**
  * Demo data layer. The seed (fictional staff, flights, history) is generated deterministically in the
@@ -104,6 +105,20 @@ interface HubState {
   saveRoute: (r: RouteTemplate) => void;
   removeRoute: (flightNo: string) => void;
   saveCharter: (c: Charter) => void;
+  /** Special service requests and gate change for a flight (airline list merged with NFS edits). */
+  adviceFor: (flightId: string) => FlightAdvice;
+  saveAdvice: (a: FlightAdvice) => void;
+  changeGate: (flightId: string, gate: string, reason: string) => void;
+  /** Issues on inbound flights posted by Rampline operations, for a flight (by flight number and date). */
+  alertsFor: (flightId: string) => InboundAlert[];
+  ackAlert: (flightId: string, alertId: string) => void;
+  /** Demo stand-in for Rampline: posts an inbound alert as the operations team would. */
+  postInboundAlert: (a: Omit<InboundAlert, "id" | "at" | "by">) => void;
+  /** Alerts for the person signed in, newest first. */
+  notices: Notice[];
+  unread: number;
+  notify: (n: Omit<Notice, "id" | "at" | "by" | "readBy">) => void;
+  markRead: (ids: string[]) => void;
   removeCharter: (id: string) => void;
   /** Trim, resize and upload a logo. Returns its URL and a suggested brand colour. */
   uploadLogo: (code: string, file: File) => Promise<{ url: string; colour: string | null } | null>;
@@ -259,8 +274,10 @@ export function HubProvider({ children }: { children: React.ReactNode }) {
       const [personId, date] = k.split("|");
       roster.push({ personId, date, shift });
     }
-    return { ...generated, people, roster };
-  }, [generated, plan, overrides, state.profile]);
+    const adv = state.advice as Record<string, FlightAdvice>;
+    const flights = Object.keys(adv).length ? generated.flights.map((f) => (adv[f.id]?.gate && adv[f.id].gate !== f.gate ? { ...f, gate: adv[f.id].gate!, gateFrom: f.gate } : f)) : generated.flights;
+    return { ...generated, people, roster, flights };
+  }, [generated, plan, overrides, state.profile, state.advice]);
   const liveIdx = React.useMemo(() => new Map(ds.roster.map((r) => [`${r.personId}|${r.date}`, r.shift])), [ds]);
 
   const people = React.useMemo(() => new Map(ds.people.map((p) => [p.id, p])), [ds]);
@@ -501,6 +518,112 @@ export function HubProvider({ children }: { children: React.ReactNode }) {
       return null;
     }
   }, []);
+  const adviceFor = React.useCallback(
+    (flightId: string): FlightAdvice => {
+      const stored = state.advice[flightId] as FlightAdvice | undefined;
+      if (stored) return stored;
+      const f = generated.flights.find((x) => x.id === flightId);
+      return { flightId, ssr: f ? demoSsr(f) : [] };
+    },
+    [state.advice, generated.flights],
+  );
+  const saveAdvice = React.useCallback((a: FlightAdvice) => write([{ kind: "advice", id: a.flightId, payload: a }]), [write]);
+
+  const notices = React.useMemo(() => {
+    const me = session?.personId;
+    if (!me) return [];
+    return (Object.values(state.notice) as Notice[]).filter((n) => n.to.includes(me)).sort((a, b) => b.at.localeCompare(a.at)).slice(0, 50);
+  }, [state.notice, session]);
+  const unread = notices.filter((n) => !n.readBy.includes(session?.personId ?? "")).length;
+  const notify = React.useCallback(
+    (n: Omit<Notice, "id" | "at" | "by" | "readBy">) => {
+      const to = [...new Set(n.to)].filter((id) => id && id !== session?.personId);
+      if (!to.length) return;
+      const full: Notice = { ...n, to, id: crypto.randomUUID(), at: new Date().toISOString(), by: session?.name ?? "Gateline", readBy: [] };
+      write([{ kind: "notice", id: full.id, payload: full }]);
+      sendPush(to, n.title, n.body, n.href, `${n.kind}-${n.href}`);
+    },
+    [write, session],
+  );
+  const markRead = React.useCallback(
+    (ids: string[]) => {
+      const me = session?.personId;
+      if (!me) return;
+      const rows = ids
+        .map((id) => state.notice[id] as Notice | undefined)
+        .filter((n): n is Notice => !!n && !n.readBy.includes(me))
+        .map((n) => ({ kind: "notice" as Kind, id: n.id, payload: { ...n, readBy: [...n.readBy, me] } }));
+      if (rows.length) write(rows);
+    },
+    [write, state.notice, session],
+  );
+  const changeGate = React.useCallback(
+    (flightId: string, gate: string, reason: string) => {
+      const f = generated.flights.find((x) => x.id === flightId);
+      if (!f) return;
+      const cur = adviceFor(flightId);
+      const from = cur.gate ?? f.gate;
+      if (gate === from) return;
+      const next: FlightAdvice = gate === f.gate ? { ...cur, gate: undefined, gateFrom: undefined, gateChangedAt: new Date().toISOString(), gateChangedBy: session?.name, gateReason: reason } : { ...cur, gate, gateFrom: f.gate, gateChangedAt: new Date().toISOString(), gateChangedBy: session?.name, gateReason: reason };
+      write([{ kind: "advice", id: flightId, payload: next }, entry({ action: "schedule.change", summary: `Gate change ${f.flightNo} ${f.date}: ${from} → ${gate}${reason ? ` (${reason})` : ""}`, teams: [f.airline], date: f.date, ref: flightId })]);
+      void publish({ module: "gateline", type: EVENT_TYPES.gateChange, payload: { flightId, flightNo: f.flightNo, from, to: gate, reason } });
+      // Everyone working the flight, plus leads and supervisors on shift for that airline's terminal
+      const log = (Object.values(state.log as Record<string, GateLog>).find((g) => g.flightId === flightId)) ?? generated.gateLogs.find((g) => g.flightId === flightId);
+      const team = log ? log.team.map((t) => t.personId) : [];
+      const sups = generated.people.filter((p) => p.role === "supervisor" && p.homeTerminal === f.terminal).map((p) => p.id);
+      notify({ to: [...team, ...sups], kind: "gate", title: `Gate change · ${f.flightNo}`, body: `Now ${gate} (was ${from}) · STD ${f.std}${reason ? ` · ${reason}` : ""}`, href: `/gate/${flightId}` });
+    },
+    [generated, adviceFor, write, entry, session, state.log, notify],
+  );
+  const inbound = React.useMemo<InboundAlert[]>(() => {
+    const fromRampline = events
+      .filter((e) => e.type === EVENT_TYPES.inboundAlert)
+      .map((e) => ({ ...(e.payload as Omit<InboundAlert, "id" | "at">), id: e.id, at: e.at }) as InboundAlert);
+    return [...demoInbound(clock.date, generated.flights, clock.minutes), ...fromRampline];
+  }, [events, clock.date, clock.minutes, generated.flights]);
+  const alertsFor = React.useCallback(
+    (flightId: string) => {
+      const f = generated.flights.find((x) => x.id === flightId);
+      if (!f) return [];
+      const norm = (n: string) => n.replace(/\s/g, "").toUpperCase();
+      return inbound.filter((a) => a.date === f.date && norm(a.flightNo) === norm(f.flightNo)).sort((a, b) => b.at.localeCompare(a.at));
+    },
+    [inbound, generated.flights],
+  );
+  const ackAlert = React.useCallback(
+    (flightId: string, alertId: string) => {
+      const cur = adviceFor(flightId);
+      const at = new Date().toISOString();
+      write([{ kind: "advice", id: flightId, payload: { ...cur, alertAcks: { ...(cur.alertAcks ?? {}), [alertId]: { by: session?.name ?? "Passenger services", at } } } }]);
+      void publish({ module: "gateline", type: EVENT_TYPES.alertAck, payload: { flightId, alertId, by: session?.name, at } }).then(() => setEvents(localEvents()));
+    },
+    [adviceFor, write, session],
+  );
+  const postInboundAlert = React.useCallback(
+    (a: Omit<InboundAlert, "id" | "at" | "by">) => {
+      const by = "NFS Operations Control (Rampline)";
+      void publish({ module: "rampline", type: EVENT_TYPES.inboundAlert, payload: { ...a, by } }).then(() => setEvents(localEvents()));
+      const f = generated.flights.find((x) => x.date === a.date && x.flightNo === a.flightNo);
+      if (!f) return;
+      const log = (Object.values(state.log as Record<string, GateLog>).find((g) => g.flightId === f.id)) ?? generated.gateLogs.find((g) => g.flightId === f.id);
+      const onShift = new Set(ds.roster.filter((r) => r.date === f.date && r.shift !== "O" && r.shift !== "V").map((r) => r.personId));
+      const leads = generated.people.filter((p) => p.role === "lead" && p.coreAirline === f.airline && onShift.has(p.id)).map((p) => p.id);
+      const sups = generated.people.filter((p) => (p.role === "supervisor" && p.homeTerminal === f.terminal) || p.role === "manager").map((p) => p.id);
+      notify({
+        to: [...(log?.team.map((t) => t.personId) ?? []), ...leads, ...sups],
+        kind: "inbound",
+        title: `${a.urgent ? "Urgent · " : ""}${a.category} · ${f.flightNo} inbound`,
+        body: `${a.message}${a.wheelchairs ? ` · ${a.wheelchairs} wheelchair${a.wheelchairs > 1 ? "s" : ""} at the door` : ""}`,
+        href: `/gate/${f.id}`,
+      });
+    },
+    [generated, state.log, ds.roster, notify],
+  );
+
+  React.useEffect(() => {
+    if (session?.personId) void rebindPush(session.personId);
+  }, [session?.personId]);
+
   const savePerson = React.useCallback(
     (id: string, patch: Partial<Person>, log = true) => {
       const cur = people.get(id);
@@ -700,6 +823,16 @@ export function HubProvider({ children }: { children: React.ReactNode }) {
     removeRoute,
     saveCharter,
     removeCharter,
+    adviceFor,
+    saveAdvice,
+    changeGate,
+    alertsFor,
+    ackAlert,
+    postInboundAlert,
+    notices,
+    unread,
+    notify,
+    markRead,
     uploadLogo,
     savePerson,
     saveProfile,

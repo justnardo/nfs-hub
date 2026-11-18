@@ -2,11 +2,12 @@
 import * as React from "react";
 import Link from "next/link";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
-import { ChevronLeft, ChevronRight, Pencil, Plus, Radar } from "lucide-react";
+import { Siren, ChevronLeft, ChevronRight, Pencil, Plus, Radar } from "lucide-react";
 import { Badge, Button, Card, CardContent, CardDescription, CardHeader, CardTitle, PageHeader, Table, Td, Th, Tr, cn } from "@nfs/ui";
 import { can } from "@nfs/auth";
 import { addDays, formatDate, type Terminal } from "@nfs/db";
 import type { Charter } from "@nfs/demo";
+import { timingsFor } from "@nfs/db";
 import { deriveStatus, flightaware, flightradar24 } from "@nfs/flights";
 import { useHub } from "@/lib/store";
 import { RequirePerm } from "@/components/guard";
@@ -99,12 +100,12 @@ function Flights() {
                   <tbody>
                     {list.map((f) => {
                       const log = hub.logByFlight.get(f.id);
-                      const s = deriveStatus(f, log, hub.today, hub.nowMin);
+                      const s = deriveStatus(f, log, hub.today, hub.nowMin, timingsFor(hub.ds.airlines.find((a) => a.code === f.airline)));
                       const ch = f.adhoc ? hub.charters.find((c) => c.id === f.adhoc!.id) : undefined;
                       return (
                         <Tr key={f.id} id={`flight-${f.id}`} className={cn(focus === f.id && "bg-gold-100/60")}>
                           <Td>
-                            <Link href={log?.status === "filed" ? `/records/${log.id}` : `/gate/${f.id}`} className="flex items-center gap-2 whitespace-nowrap font-semibold transition-colors hover:text-brand-600"><AirlineChip airline={map.get(f.airline)!} />{f.flightNo}</Link>
+                            <Link href={log?.status === "filed" ? `/records/${log.id}` : `/gate/${f.id}`} className="flex items-center gap-2 whitespace-nowrap font-semibold transition-colors hover:text-brand-600"><AirlineChip airline={map.get(f.airline)!} />{f.flightNo}{hub.alertsFor(f.id).length ? <Siren aria-label="Inbound alert from Rampline" className="size-4 shrink-0 text-bad" /> : null}</Link>
                           </Td>
                           <Td>
                             {f.destinationName} <span className="text-xs text-muted">{f.destination}</span>
@@ -119,7 +120,7 @@ function Flights() {
                           <Td className="hidden @5xl/main:table-cell text-xs">{f.aircraft}</Td>
                           <Td className="hidden @4xl/main:table-cell tabular">{log?.events.door_open ? <span title="Door open logged">{f.sta} <span className="text-xs text-muted">· door {log.events.door_open}</span></span> : f.sta}</Td>
                           <Td className="tabular font-semibold">{f.std}</Td>
-                          <Td className="tabular">{f.gate}</Td>
+                          <Td className="tabular">{f.gateFrom ? <span title={`Gate changed from ${f.gateFrom}`} className="inline-flex items-center gap-1 rounded-md bg-gold-100 px-1.5 py-0.5 font-semibold text-gold-700">{f.gate}<span className="text-[10px] font-medium line-through opacity-70">{f.gateFrom}</span></span> : f.gate}</Td>
                           <Td className="hidden @4xl/main:table-cell text-xs">{log ? <PersonLink p={hub.people.get(log.leadId)} /> : "—"}</Td>
                           <Td className="hidden @5xl/main:table-cell tabular text-xs">{log?.paxBoarded ?? "—"}/{log?.paxBooked ?? (f.adhoc ? f.paxBooked : "—")}</Td>
                           <Td><div className="flex items-center gap-1.5"><FlightStatusBadge status={s.status} />{log && log.delayMinutes > 0 ? <span className="text-[11px] font-semibold text-bad">+{log.delayMinutes}m</span> : null}</div></Td>

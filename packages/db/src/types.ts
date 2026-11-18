@@ -33,6 +33,15 @@ export interface Airline {
   custom?: boolean;
   /** The built-in operator for charters and ad-hoc flights (no core team; any trained agent qualifies). */
   charter?: boolean;
+  /** When check-in opens and closes and when boarding should start, in minutes before STD. */
+  timings?: AirlineTimings;
+}
+
+export interface AirlineTimings {
+  checkInOpens: number;
+  checkInCloses: number;
+  boardingStarts: number;
+  gateCloses: number;
 }
 
 export interface TrainingRecord {
@@ -79,6 +88,23 @@ export interface Flight {
   paxBooked: number;
   /** One-off charter / ad-hoc flight, not part of the published schedule. */
   adhoc?: AdhocInfo;
+  /** Set when the gate was changed: the gate it was moved from. */
+  gateFrom?: string;
+}
+
+/** Special service request codes (IATA SSR) handled above the wing. */
+export type SsrCode = "WCHR" | "WCHS" | "WCHC" | "UMNR" | "MEDA" | "BLND" | "DEAF" | "DPNA" | "PETC" | "MAAS";
+export interface SsrItem {
+  id: string;
+  code: SsrCode;
+  /** Passenger surname / initial, as on the airline list. */
+  name: string;
+  seat?: string;
+  note?: string;
+  /** Where it came from: the airline's passenger list (PNL/ADL) or added by NFS. */
+  source: "airline" | "nfs";
+  handled?: boolean;
+  handledAt?: string;
 }
 
 export type AdhocStatus = "tentative" | "confirmed" | "cancelled";
@@ -98,6 +124,7 @@ export interface AdhocInfo {
 export type FlightStatus =
   | "Scheduled"
   | "Check-in open"
+  | "Check-in closed"
   | "Boarding"
   | "Final call"
   | "Door closed"
@@ -173,6 +200,12 @@ export interface Discrepancy {
   note: string;
   at: string; // HH:mm
   hasPhoto: boolean;
+  /** Checked bags to come off the aircraft (no-show, offload, denied boarding). */
+  bags?: number;
+  bagTags?: string;
+  seat?: string;
+  /** Sent to Rampline so the ramp team pulls the bags; acknowledged from Rampline. */
+  rampHandoff?: { sentAt: string; ackAt?: string; ackBy?: string };
 }
 
 export interface GateLog {

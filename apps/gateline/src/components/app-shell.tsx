@@ -13,6 +13,7 @@ import { transport } from "@nfs/events";
 import { useHub } from "@/lib/store";
 import { FirstGlanceCredit, GatelineWordmark, NfsMark } from "./brand";
 import { GlobalSearch, type SearchPage } from "./global-search";
+import { NotificationBell } from "./notifications";
 
 type NavItem = { href: string; label: string; icon: React.ComponentType<{ className?: string }>; perm?: Permission; mobile?: boolean };
 
@@ -279,6 +280,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           <div className="ml-auto flex items-center gap-2 md:ml-0">
             <div className="md:hidden"><GlobalSearch pages={SEARCH_PAGES} variant="icon" /></div>
             <Badge tone="gold" className="hidden xl:inline-flex">Demo data · fictional staff</Badge>
+            <NotificationBell />
             <button
               onClick={() => hub.setOffline(!hub.offline)}
               title={hub.offline ? "Offline — records held on this device" : `Online · sync via ${transport() === "supabase" ? "Supabase" : "local demo"}`}

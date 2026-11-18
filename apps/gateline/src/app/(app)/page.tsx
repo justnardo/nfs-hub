@@ -1,10 +1,11 @@
 "use client";
 import * as React from "react";
 import Link from "next/link";
-import { Activity, AlertTriangle, ArrowRight, BadgeCheck, Clock, GraduationCap, PlaneTakeoff, Users } from "lucide-react";
+import { Siren, Activity, AlertTriangle, ArrowRight, BadgeCheck, Clock, GraduationCap, PlaneTakeoff, Users } from "lucide-react";
 import { Badge, Button, Card, CardContent, CardDescription, CardHeader, CardTitle, PageHeader, Stat, Table, Td, Th, Tr, cn } from "@nfs/ui";
 import { GATE_EVENT_LABEL, formatDate, type GateEventType } from "@nfs/db";
 import { coverageGrid, expiringSoon, type CoverageCell } from "@nfs/rules";
+import { timingsFor } from "@nfs/db";
 import { deriveStatus } from "@nfs/flights";
 import { useHub, personName } from "@/lib/store";
 import { RequirePerm } from "@/components/guard";
@@ -25,7 +26,7 @@ function Today() {
   const [cell, setCell] = React.useState<CoverageCell | null>(null);
   const airlines = React.useMemo(() => new Map(hub.ds.airlines.map((a) => [a.code, a])), [hub.ds]);
   const flights = hub.ds.flights.filter((f) => f.date === hub.today);
-  const statuses = flights.map((f) => ({ f, s: deriveStatus(f, hub.logByFlight.get(f.id), hub.today, hub.nowMin), log: hub.logByFlight.get(f.id) }));
+  const statuses = flights.map((f) => ({ f, s: deriveStatus(f, hub.logByFlight.get(f.id), hub.today, hub.nowMin, timingsFor(hub.ds.airlines.find((a) => a.code === f.airline))), log: hub.logByFlight.get(f.id) }));
   const todayLogs = hub.gateLogs.filter((g) => g.date === hub.today);
   const sum = summarise(todayLogs, airlines);
   const departed = statuses.filter((x) => x.s.status === "Departed").length;
@@ -87,13 +88,13 @@ function Today() {
                         <Link href={log ? `/records/${log.id}` : `/gate/${f.id}`} className="flex items-center gap-2 transition-colors hover:text-brand-600">
                           <AirlineChip airline={a} />
                           <span className="leading-tight">
-                            <span className="block whitespace-nowrap font-semibold tabular">{f.flightNo}</span>
+                            <span className="flex items-center gap-1 whitespace-nowrap font-semibold tabular">{f.flightNo}{hub.alertsFor(f.id).length ? <Siren aria-label="Inbound alert from Rampline" className="size-4 shrink-0 text-bad" /> : null}</span>
                             <span className="block text-[11px] text-muted">{f.destination}</span>
                           </span>
                         </Link>
                       </Td>
                       <Td className="tabular">{f.std}</Td>
-                      <Td className="tabular">{f.gate}</Td>
+                      <Td className="tabular">{f.gateFrom ? <span title={`Gate changed from ${f.gateFrom}`} className="rounded-md bg-gold-100 px-1.5 py-0.5 font-semibold text-gold-700">{f.gate}</span> : f.gate}</Td>
                       <Td className="hidden text-xs @3xl/main:table-cell">{log ? <PersonLink p={hub.people.get(log.leadId)} /> : <span className="text-muted">—</span>}</Td>
                       <Td className="hidden @4xl/main:table-cell">
                         <div className="flex gap-0.5">

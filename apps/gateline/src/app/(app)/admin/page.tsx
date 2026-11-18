@@ -1,10 +1,11 @@
 "use client";
 import * as React from "react";
 import Link from "next/link";
-import { KeyRound } from "lucide-react";
-import { Avatar, Badge, Button, Card, CardContent, CardDescription, CardHeader, CardTitle, PageHeader, Table, Td, Th, Tr } from "@nfs/ui";
+import { KeyRound, Siren } from "lucide-react";
+import { Avatar, Badge, Button, Card, CardContent, CardDescription, CardHeader, CardTitle, Input, PageHeader, Select, Table, Td, Textarea, Th, Tr } from "@nfs/ui";
 import { ROLE_LABEL } from "@nfs/auth";
 import { formatDate } from "@nfs/db";
+import { INBOUND_CATEGORIES, type InboundCategory } from "@/lib/advice";
 import { useHub, personName } from "@/lib/store";
 import { RequirePerm } from "@/components/guard";
 
@@ -76,6 +77,58 @@ function Accounts() {
           <p className="mt-4 px-2 text-[11px] text-muted">Demo: issuing a temporary password resets the account to the demo password. In production this sends a Supabase Auth reset link to the staff email on file.</p>
         </CardContent>
       </Card>
+      <RamplineAlertDemo />
     </>
+  );
+}
+
+/** Stand-in for the Rampline side in the demo: post an inbound alert exactly as operations would. */
+function RamplineAlertDemo() {
+  const hub = useHub();
+  const flights = hub.ds.flights.filter((f) => f.date === hub.today).sort((a, b) => a.std.localeCompare(b.std));
+  const [flightNo, setFlightNo] = React.useState(() => flights.find((f) => f.airline === "BW" || f.airline === "JY")?.flightNo ?? flights[0]?.flightNo ?? "");
+  const [category, setCategory] = React.useState<InboundCategory>("Extra wheelchairs");
+  const [message, setMessage] = React.useState("Crew reports 3 extra wheelchair passengers on the inbound, not on the list. Meet at the aircraft door.");
+  const [wheelchairs, setWheelchairs] = React.useState(3);
+  const [urgent, setUrgent] = React.useState(false);
+  const [sent, setSent] = React.useState<string | null>(null);
+  return (
+    <Card className="mt-5">
+      <CardHeader>
+        <div><CardTitle>Rampline operations alert · demo</CardTitle><CardDescription>Posts an inbound alert as the operations team would from Rampline. The flight&apos;s team, leads and supervisors are alerted in Gateline and on their phones.</CardDescription></div>
+        <Siren className="size-4 text-bad" />
+      </CardHeader>
+      <CardContent className="grid gap-3 sm:grid-cols-4">
+        <label className="block"><span className="text-xs font-semibold text-muted">Today&apos;s flight</span>
+          <Select value={flightNo} onChange={(e) => setFlightNo(e.target.value)} className="mt-1 w-full">
+            {flights.map((f) => <option key={f.id} value={f.flightNo}>{f.flightNo} · STA {f.sta}</option>)}
+          </Select>
+        </label>
+        <label className="block"><span className="text-xs font-semibold text-muted">What&apos;s happening</span>
+          <Select value={category} onChange={(e) => setCategory(e.target.value as InboundCategory)} className="mt-1 w-full">
+            {INBOUND_CATEGORIES.map((c) => <option key={c}>{c}</option>)}
+          </Select>
+        </label>
+        <label className="block"><span className="text-xs font-semibold text-muted">Wheelchairs at the door</span>
+          <Input type="number" min={0} max={12} value={wheelchairs} onChange={(e) => setWheelchairs(Math.max(0, Math.min(12, Number(e.target.value) || 0)))} className="mt-1" />
+        </label>
+        <label className="flex items-end gap-2 pb-2 text-sm"><input type="checkbox" checked={urgent} onChange={(e) => setUrgent(e.target.checked)} className="size-4 accent-[var(--color-brand-500)]" /> Urgent</label>
+        <label className="block sm:col-span-4"><span className="text-xs font-semibold text-muted">Message</span>
+          <Textarea value={message} onChange={(e) => setMessage(e.target.value)} className="mt-1" />
+        </label>
+        <div className="flex items-center gap-3 sm:col-span-4">
+          <Button
+            disabled={!flightNo || message.trim().length < 5}
+            onClick={() => {
+              hub.postInboundAlert({ flightNo, date: hub.today, category, message: message.trim(), wheelchairs: wheelchairs || undefined, urgent });
+              setSent(flightNo);
+            }}
+          >
+            <Siren /> Send from Rampline
+          </Button>
+          {sent ? <span className="text-sm text-muted">Sent to the {sent} team. Open the flight&apos;s gate log to see it.</span> : null}
+        </div>
+      </CardContent>
+    </Card>
   );
 }

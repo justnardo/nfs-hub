@@ -72,6 +72,7 @@ export const AIRLINES: Airline[] = [
     slaConfirmed: false,
     stationManager: { name: "T. Missick", phone: "+1 242 555 0163", email: "nas@example-intercaribbean.com", preferences: "Walk-out boarding; two agents on the ramp line." },
     requiredTraining: ["InterCaribbean DCS"],
+    timings: { checkInOpens: 150, checkInCloses: 40, boardingStarts: 30, gateCloses: 10 },
     usesJetBridge: false,
   },
   {

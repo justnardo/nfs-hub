@@ -2,6 +2,7 @@
 import * as React from "react";
 import { Camera, CheckCircle2, KeyRound, Loader2, Lock, LogOut } from "lucide-react";
 import { useRouter } from "next/navigation";
+import { PushToggle } from "@/components/notifications";
 import { Avatar, Badge, Button, Card, CardContent, CardDescription, CardHeader, CardTitle, Input, Label, PageHeader, Textarea } from "@nfs/ui";
 import { ROLE_LABEL, signOut } from "@nfs/auth";
 import { formatDate } from "@nfs/db";
@@ -105,6 +106,10 @@ export default function ProfilePage() {
             </CardContent>
           </Card>
 
+          <Card>
+            <CardHeader><div><CardTitle>Alerts on this phone</CardTitle><CardDescription>Get told the moment you&apos;re put on a flight or its gate changes</CardDescription></div></CardHeader>
+            <CardContent><PushToggle /></CardContent>
+          </Card>
           <Card>
             <CardHeader><div><CardTitle>Password</CardTitle><CardDescription>Requests go to the system administrator</CardDescription></div><KeyRound className="size-4 text-brand-500" /></CardHeader>
             <CardContent className="space-y-3">

@@ -2,7 +2,7 @@
 import * as React from "react";
 import { ImageUp, Loader2, Sparkles, X } from "lucide-react";
 import { Button, Dialog, DialogContent, Input, Label, Select, Textarea, cn } from "@nfs/ui";
-import type { Airline, Terminal } from "@nfs/db";
+import { timingsFor, type Airline, type AirlineTimings, type Terminal } from "@nfs/db";
 import type { RouteTemplate } from "@nfs/demo";
 import { useHub } from "@/lib/store";
 
@@ -127,6 +127,21 @@ export function AirlineDialog({ airline, onClose }: { airline?: Airline; onClose
           <label className="flex cursor-pointer items-center gap-2"><input type="checkbox" checked={a.slaConfirmed} onChange={(e) => setA({ ...a, slaConfirmed: e.target.checked })} className="size-4 accent-[var(--color-brand-500)]" /> Figures confirmed with the airline</label>
           <label className="flex cursor-pointer items-center gap-2"><input type="checkbox" checked={a.usesJetBridge} onChange={(e) => setA({ ...a, usesJetBridge: e.target.checked, sla: { ...a.sla, jetBridge: e.target.checked ? Math.max(1, a.sla.jetBridge) : 0 } })} className="size-4 accent-[var(--color-brand-500)]" /> Uses a jet bridge</label>
         </div>
+
+        <p className="mt-5 text-xs font-bold uppercase tracking-wide text-muted">Timings · minutes before departure</p>
+        <div className="mt-2 grid grid-cols-2 gap-3 sm:grid-cols-4">
+          {([
+            ["checkInOpens", "Check-in opens"],
+            ["checkInCloses", "Check-in closes"],
+            ["boardingStarts", "Boarding starts"],
+            ["gateCloses", "Gate closes"],
+          ] as [keyof AirlineTimings, string][]).map(([k, label]) => (
+            <Field key={k} label={label}>
+              <Input type="number" min={0} max={360} value={timingsFor(a)[k]} onChange={(e) => setA({ ...a, timings: { ...timingsFor(a), [k]: Math.max(0, Math.min(360, Number(e.target.value) || 0)) } })} />
+            </Field>
+          ))}
+        </div>
+        <p className="mt-1.5 text-[11px] text-muted">Gateline shows check-in open and closed from these, and flags a flight when boarding hasn&apos;t started on time. Boarding, door close and pushback come from the lead&apos;s taps.</p>
 
         <div className="mt-5 grid gap-3 sm:grid-cols-2">
           <Field label="Aircraft (comma separated)"><Input value={aircraft} onChange={(e) => setAircraft(e.target.value)} placeholder="B737-800, A320" /></Field>

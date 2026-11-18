@@ -17,6 +17,11 @@ export const EVENT_TYPES = {
   gateFiled: "gate.filed",
   doorClose: "gate.door_close", // consumed by Rampline
   pushback: "gate.pushback", // consumed by Rampline
+  bagOffload: "gate.bag_offload", // consumed by Rampline: ramp pulls the bags; Rampline replies with ramp.offload_done
+  offloadDone: "ramp.offload_done", // from Rampline
+  gateChange: "flight.gate_change",
+  inboundAlert: "ops.inbound_alert", // from Rampline operations: an issue on an inbound flight
+  alertAck: "gate.alert_ack", // back to Rampline: passenger services has seen it
   agentReassigned: "agent.reassigned",
   trainingExpired: "training.expired",
 } as const;

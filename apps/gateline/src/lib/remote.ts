@@ -5,8 +5,8 @@
  */
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 
-export type Kind = "log" | "reassignment" | "feedback" | "roster" | "airline" | "route" | "person" | "profile" | "request" | "rules" | "period" | "audit" | "charter";
-export const KINDS: Kind[] = ["log", "reassignment", "feedback", "roster", "airline", "route", "person", "profile", "request", "rules", "period", "audit", "charter"];
+export type Kind = "log" | "reassignment" | "feedback" | "roster" | "airline" | "route" | "person" | "profile" | "request" | "rules" | "period" | "audit" | "charter" | "advice" | "notice";
+export const KINDS: Kind[] = ["log", "reassignment", "feedback", "roster", "airline", "route", "person", "profile", "request", "rules", "period", "audit", "charter", "advice", "notice"];
 export type StateMap = Record<Kind, Record<string, unknown>>;
 
 export const emptyState = (): StateMap => Object.fromEntries(KINDS.map((k) => [k, {}])) as StateMap;
@@ -186,4 +186,73 @@ export async function uploadAirlineLogo(code: string, blob: Blob): Promise<strin
   const { error } = await c.storage.from("gateline-airline-logos").upload(path, blob, { contentType: "image/png", upsert: false });
   if (error) return null;
   return c.storage.from("gateline-airline-logos").getPublicUrl(path).data.publicUrl;
+}
+
+/* ---------------- Phone alerts (Web Push) ---------------- */
+
+/** Public half of the Web Push key pair (safe to ship); the private half is a Supabase Edge Function secret. */
+const VAPID_PUBLIC = "BDM5wIZMGcNMBVPa_OIBCyWB-Ay9mYuEiyhp9Ys15Ff0teOAqyO6gcdF_grWhEp0xZriQdKoj7ged5O05H4uAvc";
+
+const b64ToBytes = (b64: string) => {
+  const pad = "=".repeat((4 - (b64.length % 4)) % 4);
+  const raw = atob((b64 + pad).replace(/-/g, "+").replace(/_/g, "/"));
+  return Uint8Array.from(raw, (c) => c.charCodeAt(0));
+};
+
+export type PushState = "unsupported" | "needs-install" | "denied" | "off" | "on";
+
+/** What this phone/browser can do. iPhones only allow alerts once Gateline is added to the Home Screen. */
+export async function pushState(): Promise<PushState> {
+  if (typeof window === "undefined" || !("Notification" in window) || !("serviceWorker" in navigator)) {
+    const ios = typeof navigator !== "undefined" && /iphone|ipad/i.test(navigator.userAgent);
+    return ios ? "needs-install" : "unsupported";
+  }
+  if (!("PushManager" in window)) return "unsupported";
+  if (Notification.permission === "denied") return "denied";
+  const reg = await navigator.serviceWorker.getRegistration();
+  const sub = await reg?.pushManager.getSubscription();
+  return sub && Notification.permission === "granted" ? "on" : "off";
+}
+
+/** Calls the gateline-push edge function (subscriptions and the signing key stay server-side). */
+async function pushFn(body: Record<string, unknown>): Promise<boolean> {
+  const c = sb();
+  if (!c) return false;
+  const { error } = await c.functions.invoke("gateline-push", { body });
+  return !error;
+}
+
+/** Ask permission, subscribe this device and register it for the person signed in. */
+export async function enablePush(personId: string): Promise<PushState> {
+  const key = process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY ?? VAPID_PUBLIC;
+  if (!("serviceWorker" in navigator)) return "unsupported";
+  const perm = await Notification.requestPermission();
+  if (perm !== "granted") return perm === "denied" ? "denied" : "off";
+  const reg = (await navigator.serviceWorker.getRegistration()) ?? (await navigator.serviceWorker.register("/sw.js"));
+  await navigator.serviceWorker.ready;
+  const sub = (await reg.pushManager.getSubscription()) ?? (await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: b64ToBytes(key) }));
+  const ok = await pushFn({ action: "register", endpoint: sub.endpoint, personId, subscription: sub.toJSON(), userAgent: navigator.userAgent });
+  return ok ? "on" : "off";
+}
+
+/** Point this device's alerts at whoever is signed in now (shared phones change hands at shift change). */
+export async function rebindPush(personId: string) {
+  if (typeof window === "undefined" || !("serviceWorker" in navigator) || !("Notification" in window) || Notification.permission !== "granted") return;
+  const reg = await navigator.serviceWorker.getRegistration();
+  const sub = await reg?.pushManager.getSubscription();
+  if (sub) await pushFn({ action: "register", endpoint: sub.endpoint, personId, subscription: sub.toJSON(), userAgent: navigator.userAgent });
+}
+
+export async function disablePush() {
+  const reg = await navigator.serviceWorker.getRegistration();
+  const sub = await reg?.pushManager.getSubscription();
+  if (!sub) return;
+  await pushFn({ action: "unregister", endpoint: sub.endpoint });
+  await sub.unsubscribe();
+}
+
+/** Send phone alerts (fire and forget; the in-app alert is already saved). */
+export function sendPush(to: string[], title: string, body: string, url: string, tag?: string) {
+  if (!to.length) return;
+  void pushFn({ action: "notify", to, title, body, url, tag });
 }
