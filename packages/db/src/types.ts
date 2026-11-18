@@ -71,6 +71,9 @@ export interface Person {
   photoUrl?: string | null;
   /** Managers can deactivate a staff record without deleting history */
   active?: boolean;
+  /** Last day worked, for staff who have left NFS: rostered up to and including this day only. */
+  leftOn?: string;
+  leaving?: { reason: string; hrContact: string; hrRef?: string; recordedBy: string; at: string };
 }
 
 export interface Flight {

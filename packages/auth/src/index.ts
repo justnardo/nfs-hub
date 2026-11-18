@@ -113,6 +113,7 @@ export function authenticate(people: Person[], staffId: string, password: string
   const id = normaliseStaffId(staffId);
   const person = people.find((p) => p.staffNo === id);
   if (!person || password !== DEMO_PASSWORD) return { ok: false, error: "Staff ID or password is incorrect." };
+  if (person.active === false) return { ok: false, error: "This account is no longer active. Contact your manager if this is wrong." };
   return { ok: true, person };
 }
 

@@ -2,12 +2,13 @@
 import * as React from "react";
 import Link from "next/link";
 import { useParams } from "next/navigation";
-import { ArrowLeft, Mail, Pencil, Phone, Plus, Trash2 } from "lucide-react";
+import { UserPlus, ArrowLeft, Mail, Pencil, Phone, Plus, Trash2 } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { can } from "@nfs/auth";
 import type { RouteTemplate } from "@nfs/demo";
 import { AirlineDialog, RouteDialog } from "@/components/airline-editor";
 import { CharterBadge } from "@/components/charter-dialog";
+import { TeamMembersDialog } from "@/components/staff-dialogs";
 import { Pagination, usePaged } from "@/components/pagination";
 import { Avatar, Badge, Button, Card, CardContent, CardDescription, CardHeader, CardTitle, PageHeader, Stat, Table, Td, Th, Tr, cn } from "@nfs/ui";
 import { addDays, formatDate } from "@nfs/db";
@@ -36,6 +37,7 @@ function AirlineProfile() {
   const core = hub.ds.people.filter((p) => a && (a.charter ? p.trainedAirlines.includes(a.code) && (p.role === "agent" || p.role === "lead") : p.coreAirline === a.code)).sort((x, y) => (x.role === y.role ? x.lastName.localeCompare(y.lastName) : x.role === "lead" ? -1 : 1));
   const corePage = usePaged(core, 10, code);
   const [showAllBackup, setShowAllBackup] = React.useState(false);
+  const [teamOpen, setTeamOpen] = React.useState(false);
   if (!a) return <p className="text-sm text-muted">Airline not found.</p>;
   const manage = can(hub.session?.role, "airlines.edit");
   const map = new Map(hub.ds.airlines.map((x) => [x.code, x]));
@@ -73,6 +75,7 @@ function AirlineProfile() {
         }
       />
       {editing ? <AirlineDialog airline={a} onClose={() => setEditing(false)} /> : null}
+      {teamOpen ? <TeamMembersDialog airline={a} onClose={() => setTeamOpen(false)} /> : null}
       {route ? <RouteDialog airline={a} route={route === "new" ? undefined : route} onClose={() => setRoute(null)} /> : null}
       <div className="grid grid-cols-2 gap-3 @3xl/main:grid-cols-4">
         <Stat label="On-time D0 · 21 days" value={pct(s.d0)} tone={s.d0 >= 85 ? "ok" : "warn"} sub={`${s.flights} flights`} />
@@ -89,6 +92,7 @@ function AirlineProfile() {
             ) : (
               <div><CardTitle>Core team</CardTitle><CardDescription>Protected — moving these staff off {a.code} needs a manager when it breaks SLA</CardDescription></div>
             )}
+            {!a.charter && can(hub.session?.role, "staff.assign") ? <Button variant="secondary" size="sm" onClick={() => setTeamOpen(true)}><UserPlus /> Add or remove</Button> : null}
           </CardHeader>
           <CardContent className="px-2 sm:px-5">
             <Table>

@@ -17,6 +17,7 @@ import { CoverageTimeline } from "@/components/timeline";
 import { CellMenu } from "@/components/roster-grid";
 import { AbsenceChip, AbsenceDialog, TrainingBadge } from "@/components/absence";
 import { WeekStrip, type WeekState } from "@/components/week-strip";
+import { TeamMembersDialog } from "@/components/staff-dialogs";
 import { ABSENCE_TYPES, applyAbsences } from "@/lib/absence";
 import { allTeams, buildPeriod, periodEnd, rosterSections, teamLabel, teamMembers, withPeriod, type TeamKey } from "@/lib/periods";
 import { downloadRosterPdf } from "@/lib/pdf";
@@ -438,7 +439,7 @@ function Rosters() {
       <ReassignDialog cell={gapCell ? cells.find((c) => c.date === gapCell.date && c.shift === gapCell.shift) ?? gapCell : null} open={!!gapCell} onOpenChange={(v) => !v && setGapCell(null)} />
       {absentCell && hub.people.get(absentCell.personId) ? <AbsenceDialog person={hub.people.get(absentCell.personId)!} date={absentCell.date} absence={hub.absenceOn(absentCell.personId, absentCell.date)} onClose={() => setAbsentCell(null)} /> : null}
       {optOpen ? <OptimiseDialog team={team} members={members} ws={ws} onClose={() => setOptOpen(false)} /> : null}
-      {teamOpen && airline ? <TeamDialog airlineCode={airline.code} onClose={() => setTeamOpen(false)} /> : null}
+      {teamOpen && airline ? <TeamMembersDialog airline={airline} onClose={() => setTeamOpen(false)} /> : null}
       {createOpen ? <CreateRosterDialog defaultTeam={team} defaultStart={unrostered ? ws : undefined} onClose={() => setCreateOpen(false)} /> : null}
     </>
   );
@@ -540,45 +541,6 @@ function OptimiseDialog({ team, members, ws, onClose }: { team: TeamKey; members
             <Lock className="size-4" /> Apply {result.edits.length || ""} change{result.edits.length === 1 ? "" : "s"}
           </Button>
         </div>
-      </DialogContent>
-    </Dialog>
-  );
-}
-
-function TeamDialog({ airlineCode, onClose }: { airlineCode: string; onClose: () => void }) {
-  const hub = useHub();
-  const airline = hub.ds.airlines.find((a) => a.code === airlineCode)!;
-  const staff = hub.ds.people
-    .filter((p) => (p.role === "agent" || p.role === "lead") && p.active !== false)
-    .filter((p) => p.coreAirline === airlineCode || !p.coreAirline || p.trainedAirlines.includes(airlineCode))
-    .sort((a, b) => Number(b.coreAirline === airlineCode) - Number(a.coreAirline === airlineCode) || a.lastName.localeCompare(b.lastName));
-  return (
-    <Dialog open onOpenChange={(v) => !v && onClose()}>
-      <DialogContent className="max-w-xl" title={`${airline.name} team`} description="Move staff onto or off this airline's core team. Rosters rebuild with the change; training records stay with the training department.">
-        <div className="max-h-[55vh] space-y-1.5 overflow-y-auto pr-1">
-          {staff.map((p) => {
-            const current = eligibleFor(p, airline, hub.today).ok;
-            return (
-              <div key={p.id} className="flex items-center gap-3 rounded-lg border border-line p-2.5">
-                <Avatar name={personName(p)} src={p.photoUrl} tone={p.role === "lead" ? "dark" : "brand"} />
-                <div className="min-w-0 flex-1">
-                  <p className="text-sm font-semibold">{personName(p)} <span className="font-normal text-muted">· {p.role === "lead" ? "Lead" : "Agent"}</span></p>
-                  <p className="text-xs text-muted">{current ? `Current on ${airline.code}` : `Not current on ${airline.code}`}</p>
-                </div>
-                <Select
-                  value={p.coreAirline ?? ""}
-                  onChange={(e) => hub.savePerson(p.id, { coreAirline: e.target.value || null })}
-                  aria-label={`Team for ${personName(p)}`}
-                  className="h-9 text-xs"
-                >
-                  <option value="">Float pool</option>
-                  {hub.ds.airlines.map((a) => <option key={a.code} value={a.code}>Core {a.code}</option>)}
-                </Select>
-              </div>
-            );
-          })}
-        </div>
-        <div className="mt-4 flex justify-end"><Button onClick={onClose}>Done</Button></div>
       </DialogContent>
     </Dialog>
   );

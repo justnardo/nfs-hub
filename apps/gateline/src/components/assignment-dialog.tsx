@@ -13,9 +13,9 @@ export function AssignmentDialog({ person, onClose }: { person: Person; onClose:
   const [role, setRole] = React.useState<Role>(person.role);
   const [term, setTerm] = React.useState<Terminal>(person.homeTerminal);
   const [trained, setTrained] = React.useState<string[]>(person.trainedAirlines);
-  const [active, setActive] = React.useState(person.active !== false);
-  const roles: Role[] = superAdmin ? ["agent", "lead", "supervisor", "manager", "admin"] : ["agent", "lead", "supervisor"];
-  const lockedRole = !roles.includes(person.role);
+  // Day-to-day roles (agent, lead, supervisor) change through "Change role" with HR confirmation
+  const roles: Role[] = superAdmin ? ["manager", "admin"] : [];
+  const lockedRole = !superAdmin || !roles.includes(person.role);
 
   return (
     <Dialog open onOpenChange={(v) => !v && onClose()}>
@@ -41,10 +41,6 @@ export function AssignmentDialog({ person, onClose }: { person: Person; onClose:
               <option value="INTL">International</option>
             </Select>
           </label>
-          <label className="flex items-end gap-2 pb-2 text-sm">
-            <input type="checkbox" checked={active} onChange={(e) => setActive(e.target.checked)} className="size-4 accent-[var(--color-brand-500)]" />
-            Active (inactive staff leave the roster, history stays)
-          </label>
         </div>
         <p className="mt-5 text-xs font-semibold text-muted">Qualified on</p>
         <div className="mt-1.5 flex flex-wrap gap-1.5">
@@ -66,7 +62,7 @@ export function AssignmentDialog({ person, onClose }: { person: Person; onClose:
           <Button variant="outline" onClick={onClose}>Cancel</Button>
           <Button
             onClick={() => {
-              hub.savePerson(person.id, { coreAirline: core || null, role, homeTerminal: term, trainedAirlines: core && !trained.includes(core) ? [...trained, core] : trained, active });
+              hub.savePerson(person.id, { coreAirline: core || null, role, homeTerminal: term, trainedAirlines: core && !trained.includes(core) ? [...trained, core] : trained });
               onClose();
             }}
           >

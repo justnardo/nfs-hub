@@ -254,8 +254,10 @@ export function generateDataset(today: string, nowMinutes: number, config: Datas
     }
   };
 
-  const active = people.filter((p) => p.active !== false);
+  // Leavers stay on the roster for weeks before their last day, so history is kept
+  const activeIn = (w: string) => people.filter((p) => p.active !== false || (p.leftOn && w <= p.leftOn));
   for (const ws of weeks) {
+    const active = activeIn(ws);
     for (const airline of airlines) {
       const agents = active.filter((p) => p.role === "agent" && p.coreAirline === airline.code);
       const leads = active.filter((p) => p.role === "lead" && p.coreAirline === airline.code);
@@ -270,6 +272,18 @@ export function generateDataset(today: string, nowMinutes: number, config: Datas
     rosterTeam(active.filter((p) => p.role === "lead" && !p.coreAirline), ws, () => 1, "pool-leads");
     for (const term of ["US", "INTL"] as Terminal[]) {
       rosterTeam(active.filter((p) => p.role === "supervisor" && p.homeTerminal === term), ws, () => 1, `sup-${term}`);
+    }
+  }
+
+  // Nothing after a leaver's last day
+  const leftOn = new Map(people.filter((p) => p.leftOn).map((p) => [p.id, p.leftOn!]));
+  if (leftOn.size) {
+    for (let i = roster.length - 1; i >= 0; i--) {
+      const last = leftOn.get(roster[i].personId);
+      if (last && roster[i].date > last) {
+        shiftOf.delete(`${roster[i].personId}|${roster[i].date}`);
+        roster.splice(i, 1);
+      }
     }
   }
 

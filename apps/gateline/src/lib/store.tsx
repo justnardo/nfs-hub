@@ -128,7 +128,7 @@ interface HubState {
   removeCharter: (id: string) => void;
   /** Trim, resize and upload a logo. Returns its URL and a suggested brand colour. */
   uploadLogo: (code: string, file: File) => Promise<{ url: string; colour: string | null } | null>;
-  savePerson: (id: string, patch: Partial<Person>, log?: boolean) => void;
+  savePerson: (id: string, patch: Partial<Person>, log?: boolean, note?: string) => void;
   saveProfile: (id: string, patch: ProfilePatch) => void;
   uploadPhoto: (id: string, file: File) => Promise<boolean>;
   requestPassword: (personId: string, note: string) => void;
@@ -281,7 +281,8 @@ export function HubProvider({ children }: { children: React.ReactNode }) {
       roster.push({ personId, date, shift });
     }
     const absent = Object.values(state.absence) as Absence[];
-    const withAbsence = applyAbsences({ roster }, absent).roster;
+    const leftOn = new Map(people.filter((p) => p.leftOn).map((p) => [p.id, p.leftOn!]));
+    const withAbsence = applyAbsences({ roster: leftOn.size ? roster.filter((r) => !leftOn.has(r.personId) || r.date <= leftOn.get(r.personId)!) : roster }, absent).roster;
     const adv = state.advice as Record<string, FlightAdvice>;
     const flights = Object.keys(adv).length ? generated.flights.map((f) => (adv[f.id]?.gate && adv[f.id].gate !== f.gate ? { ...f, gate: adv[f.id].gate!, gateFrom: f.gate } : f)) : generated.flights;
     return { ...generated, people, roster: withAbsence, flights };
@@ -661,23 +662,24 @@ export function HubProvider({ children }: { children: React.ReactNode }) {
   }, [session?.personId]);
 
   const savePerson = React.useCallback(
-    (id: string, patch: Partial<Person>, log = true) => {
+    (id: string, patch: Partial<Person>, log = true, note?: string) => {
       const cur = people.get(id);
       const rows: { kind: Kind; id: string; payload: unknown }[] = [{ kind: "person", id, payload: { ...(state.person[id] as object), ...patch } }];
       if (log && cur) {
         const prev: Record<string, unknown> = {};
         const parts: string[] = [];
-        const label: Record<string, string> = { coreAirline: "team", role: "role", homeTerminal: "terminal", trainedAirlines: "qualified on", active: "active" };
+        const label: Record<string, string> = { coreAirline: "team", role: "role", homeTerminal: "terminal", trainedAirlines: "qualified on", active: "active", leftOn: "last day" };
         for (const [k, v] of Object.entries(patch)) {
           const before = (cur as unknown as Record<string, unknown>)[k];
           if (JSON.stringify(before) === JSON.stringify(v)) continue;
           prev[k] = before ?? null;
+          if (k === "leaving") continue;
           const show = (x: unknown) => (x === null || x === undefined ? (k === "coreAirline" ? "Float pool" : "none") : Array.isArray(x) ? x.join(", ") || "none" : String(x));
           parts.push(`${label[k] ?? k} ${show(before)} → ${show(v)}`);
         }
         if (parts.length) {
           const teams = [...new Set([teamOf(cur), teamOf({ ...cur, ...patch } as Person)].filter(Boolean) as TeamKey[])];
-          rows.push(entry({ action: "team.assign", summary: `${nameOf(id)}: ${parts.join(" · ")}`, teams, personId: id, prev }));
+          rows.push(entry({ action: "team.assign", summary: `${nameOf(id)}: ${parts.join(" · ")}${note ? ` · ${note}` : ""}`, teams, personId: id, prev }));
         }
       }
       write(rows);
