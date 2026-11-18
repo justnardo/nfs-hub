@@ -65,13 +65,9 @@ export default function AirlineFeedbackPage() {
   return (
     <Shell>
       <Card className="p-5 sm:p-6">
-        <div className="flex items-center gap-3">
-          <AirlineChip airline={airline} size="md" />
-          <div>
-            <p className="font-display text-lg font-semibold leading-tight">How did we do for {airline.name}?</p>
-            <p className="text-xs text-muted">Passenger services at Lynden Pindling International Airport</p>
-          </div>
-        </div>
+        <AirlineChip airline={airline} size="md" />
+        <p className="mt-3 font-display text-xl font-semibold leading-tight">How did we do for {airline.name}?</p>
+        <p className="mt-0.5 text-xs text-muted">Passenger services at Lynden Pindling International Airport</p>
 
         <Label className="mt-6 block text-xs">Which flight? (optional)</Label>
         <div className="mt-1.5 flex gap-1.5 overflow-x-auto pb-1">

@@ -127,7 +127,7 @@ interface HubState {
   /** Alerts for the person signed in, newest first. */
   notices: Notice[];
   unread: number;
-  notify: (n: Omit<Notice, "id" | "at" | "by" | "readBy">) => void;
+  notify: (n: Omit<Notice, "id" | "at" | "by" | "readBy"> & { by?: string }) => void;
   markRead: (ids: string[]) => void;
   removeCharter: (id: string) => void;
   /** Trim, resize and upload a logo. Returns its URL and a suggested brand colour. */
@@ -570,10 +570,10 @@ export function HubProvider({ children }: { children: React.ReactNode }) {
   }, [state.notice, session]);
   const unread = notices.filter((n) => !n.readBy.includes(session?.personId ?? "")).length;
   const notify = React.useCallback(
-    (n: Omit<Notice, "id" | "at" | "by" | "readBy">) => {
+    (n: Omit<Notice, "id" | "at" | "by" | "readBy"> & { by?: string }) => {
       const to = [...new Set(n.to)].filter((id) => id && id !== session?.personId);
       if (!to.length) return;
-      const full: Notice = { ...n, to, id: crypto.randomUUID(), at: new Date().toISOString(), by: session?.name ?? "Gateline", readBy: [] };
+      const full: Notice = { ...n, to, id: crypto.randomUUID(), at: new Date().toISOString(), by: n.by ?? session?.name ?? "Gateline", readBy: [] };
       write([{ kind: "notice", id: full.id, payload: full }]);
       sendPush(to, n.title, n.body, n.href, `${n.kind}-${n.href}`);
     },
@@ -604,6 +604,7 @@ export function HubProvider({ children }: { children: React.ReactNode }) {
         title: `${f.kind === "complaint" ? "Complaint" : "Compliment"} from ${a?.name ?? f.airline}${fl ? ` · ${fl.flightNo}` : ""}`,
         body: `${f.rating ? `${"★".repeat(f.rating)}${"☆".repeat(5 - f.rating)} · ` : ""}${f.summary.slice(0, 120)}`,
         href: "/feedback",
+        by: f.source === "link" ? `${f.from} · ${a?.name ?? f.airline}` : undefined,
       });
     },
     [write, generated, notify],
