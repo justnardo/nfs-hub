@@ -14,6 +14,7 @@ import { useHub } from "@/lib/store";
 import { FirstGlanceCredit, GatelineWordmark, NfsMark } from "./brand";
 import { GlobalSearch, type SearchPage } from "./global-search";
 import { NotificationBell } from "./notifications";
+import { SiteLoader, useFirstLoad } from "./site-loader";
 
 type NavItem = { href: string; label: string; icon: React.ComponentType<{ className?: string }>; perm?: Permission; mobile?: boolean };
 
@@ -118,6 +119,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const role = hub.session?.role;
   const [collapsed, setCollapsed, hydrated] = useCollapsed();
   const [drawer, setDrawer] = React.useState(false);
+  const loader = useFirstLoad(hub.ready && !!hub.session, hub.synced);
 
   React.useEffect(() => {
     if (hub.ready && !hub.session) router.replace("/login");
@@ -135,13 +137,9 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     return () => window.removeEventListener("keydown", onKey);
   }, [collapsed, setCollapsed]);
 
-  if (!hub.ready || !hub.session) {
-    return (
-      <div className="grid min-h-dvh place-items-center bg-ink-900">
-        <div className="animate-pulse"><GatelineWordmark dark /></div>
-      </div>
-    );
-  }
+  // One loader element, kept in the same place in the tree, so it fades out smoothly over the app
+  const overlay = loader.shown || !hub.ready || !hub.session ? <SiteLoader progress={loader.progress} offline={loader.offline} leaving={loader.leaving} /> : null;
+  if (!hub.ready || !hub.session) return <div className="min-h-dvh">{overlay}</div>;
 
   const visible = NAV.map((g) => ({ ...g, items: g.items.filter((i) => !i.perm || can(role, i.perm)) })).filter((g) => g.items.length);
   const mobileItems = visible.flatMap((g) => g.items).filter((i) => i.mobile).slice(0, 4);
@@ -223,6 +221,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
 
   return (
     <div className="min-h-dvh">
+      {overlay}
       {/* Desktop sidebar: full height, fixed; collapses to an icon rail */}
       <aside
         className={cn(
