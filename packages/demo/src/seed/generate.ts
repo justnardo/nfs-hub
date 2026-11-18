@@ -122,7 +122,11 @@ export function generateDataset(today: string, nowMinutes: number, config: Datas
     const trained = AIRLINES.filter((a) => a.terminal === term || r.chance(0.5)).map((a) => a.code);
     people.push(mkPerson("supervisor", term, null, trained, r.int(2004, 2012), 1011 + i));
   });
-  people.push(mkPerson("manager", "INTL", null, AIRLINES.map((a) => a.code), 2003, 1001));
+  // Presenting manager: a fixed, named account for demos (generated name is still drawn so the rest of the seed is unchanged)
+  const presenter = mkPerson("manager", "INTL", null, AIRLINES.map((a) => a.code), 2003, 1001);
+  presenter.firstName = "Dia";
+  presenter.lastName = "Trembley";
+  people.push(presenter);
   people.push(mkPerson("manager", "US", null, AIRLINES.map((a) => a.code), 2006, 1002));
   people.push(mkPerson("admin", "INTL", null, [], 2015, 1000));
 
