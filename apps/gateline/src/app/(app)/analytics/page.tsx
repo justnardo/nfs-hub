@@ -1,15 +1,18 @@
 "use client";
 import * as React from "react";
-import { Printer } from "lucide-react";
+import { Download, FileText, Loader2, Sparkles } from "lucide-react";
 import { Bar, BarChart, CartesianGrid, Legend, Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import { Badge, Button, Card, CardContent, CardDescription, CardHeader, CardTitle, PageHeader, Select, Stat, Table, Td, Th, Tr, cn } from "@nfs/ui";
-import { addDays, formatDate, rangeDays, type DelayCause } from "@nfs/db";
-import { useHub, personName } from "@/lib/store";
+import { addDays, formatDate, weekStart } from "@nfs/db";
+import { useEngineInput, useHub, personName } from "@/lib/store";
+import { DatePicker } from "@/components/date-picker";
+import { buildReport, reportCsv } from "@/lib/report";
+import { downloadBoardReport } from "@/lib/report-pdf";
 import { RequirePerm } from "@/components/guard";
 import { AirlineChip } from "@/components/ops";
 import { NfsWordmark } from "@/components/brand";
 import { Pagination, usePaged } from "@/components/pagination";
-import { isNfsCause, otpTone, pct, slaMet, summarise } from "@/lib/metrics";
+import { otpTone, pct, slaMet } from "@/lib/metrics";
 
 // Validated pair (scripts/validate_palette.js): teal slot 1, violet slot 2.
 const C1 = "#0e9aa7";
@@ -27,49 +30,58 @@ export default function AnalyticsPage() {
 
 function Analytics() {
   const hub = useHub();
-  const [days, setDays] = React.useState(14);
-  const [terminal, setTerminal] = React.useState("");
-  const from = addDays(hub.today, -(days - 1));
+  const engine = useEngineInput();
+  const earliest = hub.ds.windowStart;
+  const presets: { id: string; label: string; from: string; to: string }[] = [
+    { id: "7", label: "Last 7 days", from: addDays(hub.today, -6), to: hub.today },
+    { id: "14", label: "Last 14 days", from: addDays(hub.today, -13), to: hub.today },
+    { id: "wk", label: "This week", from: weekStart(hub.today), to: hub.today },
+    { id: "lwk", label: "Last week", from: addDays(weekStart(hub.today), -7), to: addDays(weekStart(hub.today), -1) },
+    { id: "mtd", label: "Month to date", from: `${hub.today.slice(0, 8)}01`, to: hub.today },
+    { id: "all", label: "All records", from: earliest, to: hub.today },
+  ].map((x) => ({ ...x, from: x.from < earliest ? earliest : x.from }));
+  const [preset, setPreset] = React.useState("14");
+  const [custom, setCustom] = React.useState({ from: addDays(hub.today, -13), to: hub.today });
+  const range = preset === "custom" ? custom : presets.find((x) => x.id === preset)!;
+  const [terminal, setTerminal] = React.useState<"" | "US" | "INTL">("");
+  const [airlineFilter, setAirlineFilter] = React.useState("");
+  const [pdfBusy, setPdfBusy] = React.useState(false);
   const airlines = React.useMemo(() => new Map(hub.ds.airlines.map((a) => [a.code, a])), [hub.ds]);
-  const shown = hub.ds.airlines.filter((a) => !terminal || a.terminal === terminal);
-  const logs = hub.gateLogs.filter((l) => l.status === "filed" && l.date >= from && l.date <= hub.today && airlines.get(l.airline) && (!terminal || airlines.get(l.airline)!.terminal === terminal));
-  const s = summarise(logs, airlines);
-  const prev = summarise(
-    hub.gateLogs.filter((l) => l.status === "filed" && l.date >= addDays(from, -days) && l.date < from && (!terminal || airlines.get(l.airline)!.terminal === terminal)),
-    airlines,
+
+  const rep = React.useMemo(
+    () => buildReport({ from: range.from, to: range.to, terminal, airline: airlineFilter, logs: hub.gateLogs, flights: hub.ds.flights, airlines: hub.ds.airlines, people: hub.ds.people, absences: hub.absences, reassignments: hub.reassignments, feedback: hub.feedback, engine }),
+    [range.from, range.to, terminal, airlineFilter, hub.gateLogs, hub.ds, hub.absences, hub.reassignments, hub.feedback, engine],
   );
-
-  const trend = rangeDays(from, days).map((d) => {
-    const x = summarise(logs.filter((l) => l.date === d), airlines);
-    return { day: formatDate(d, { day: "numeric", month: "short" }), D0: x.flights ? Math.round(x.d0) : null, D15: x.flights ? Math.round(x.d15) : null, flights: x.flights };
-  });
-  const byAirline = shown
-    .map((a) => {
-      const x = summarise(logs.filter((l) => l.airline === a.code), airlines);
-      return { code: a.code, name: a.name, d0: Math.round(x.d0), sla: Math.round(x.slaCompliance), flights: x.flights, board: Math.round(x.avgBoarding), disc: x.discrepanciesPer100 };
-    })
-    .sort((a, b) => b.d0 - a.d0);
-
-  const causeCounts = new Map<DelayCause, number>();
-  for (const l of logs) if (l.delayMinutes > 0 && l.delayCause) causeCounts.set(l.delayCause, (causeCounts.get(l.delayCause) ?? 0) + 1);
-  const causes = [...causeCounts]
-    .map(([cause, n]) => ({ cause, nfs: isNfsCause(cause) ? n : 0, other: isNfsCause(cause) ? 0 : n, n }))
-    .sort((a, b) => b.n - a.n);
-
-  const leads = hub.ds.people
-    .filter((p) => p.role === "lead")
-    .map((p) => {
-      const mine = logs.filter((l) => l.leadId === p.id);
-      const x = summarise(mine, airlines);
-      return { p, flights: mine.length, d0: x.d0, nfs: x.nfsDelays, other: x.otherDelays, sla: x.slaCompliance };
-    })
-    .filter((r) => r.flights > 0)
-    .sort((a, b) => b.d0 - a.d0 || b.flights - a.flights);
-  const leadPage = usePaged(leads, 8, [days, terminal]);
+  const s = rep.summary;
+  const prev = rep.previous;
+  const days = rep.days;
+  const trend = rep.trend.map((t) => ({ day: formatDate(t.date, { day: "numeric", month: "short" }), D0: t.d0, D15: t.d15, flights: t.flights, Passengers: t.pax, Wheelchairs: t.wheelchairs }));
+  const byAirline = rep.airlines.map((a) => ({ code: a.code, name: a.name, d0: a.d0, sla: a.sla, flights: a.flights, board: a.boarding, disc: a.issuesPer100, pax: a.pax }));
+  const causes = rep.causes.map((c) => ({ cause: c.cause, nfs: c.nfs ? c.n : 0, other: c.nfs ? 0 : c.n, n: c.n }));
+  const leads = rep.leads.map((l) => ({ p: l.person, flights: l.flights, d0: l.d0, nfs: l.nfs, other: l.other, sla: l.sla }));
+  const leadPage = usePaged(leads, 8, [range.from, range.to, terminal, airlineFilter]);
+  const logs = hub.gateLogs.filter((l) => l.status === "filed" && l.date >= rep.from && l.date <= rep.to);
 
   const delta = (a: number, b: number) => {
+    if (!prev.flights) return "no earlier records to compare";
     const d = Math.round(a - b);
     return d === 0 ? "level with previous period" : `${d > 0 ? "▲" : "▼"} ${Math.abs(d)} pts vs previous ${days} days`;
+  };
+  const downloadPdf = async () => {
+    setPdfBusy(true);
+    try {
+      await downloadBoardReport(rep, hub.session?.name ?? "Gateline");
+    } finally {
+      setPdfBusy(false);
+    }
+  };
+  const downloadCsv = () => {
+    const scoped = logs.filter((l) => (!terminal || airlines.get(l.airline)?.terminal === terminal) && (!airlineFilter || l.airline === airlineFilter));
+    const blob = new Blob([reportCsv(rep, scoped, hub.ds.flights, hub.people)], { type: "text/csv" });
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(blob);
+    a.download = `NFS-flight-records-${rep.from}-to-${rep.to}.csv`;
+    a.click();
   };
 
   return (
@@ -78,29 +90,58 @@ function Analytics() {
       <PageHeader
         eyebrow="Performance analytics"
         title="Above-the-wing performance"
-        description={`${formatDate(from, { day: "numeric", month: "short" })} – ${formatDate(hub.today, { day: "numeric", month: "short", year: "numeric" })} · ${s.flights} filed flight records · board-ready, print or save as PDF`}
+        description={`${formatDate(rep.from, { day: "numeric", month: "short" })} – ${formatDate(rep.to, { day: "numeric", month: "short", year: "numeric" })} · ${rep.scope} · ${s.flights} filed flight records`}
         actions={
           <div className="no-print flex flex-wrap items-center gap-2">
-            <Select value={days} onChange={(e) => setDays(Number(e.target.value))} aria-label="Period">
-              <option value={7}>Last 7 days</option>
-              <option value={14}>Last 14 days</option>
-              <option value={21}>Last 21 days</option>
-            </Select>
-            <Select value={terminal} onChange={(e) => setTerminal(e.target.value)} aria-label="Terminal">
-              <option value="">Both terminals</option>
-              <option value="US">US Departures</option>
-              <option value="INTL">International</option>
-            </Select>
-            <Button onClick={() => window.print()}><Printer /> Board report</Button>
+            <Button variant="outline" onClick={downloadCsv}><Download /> Data (CSV)</Button>
+            <Button onClick={downloadPdf} disabled={pdfBusy || !s.flights}>{pdfBusy ? <Loader2 className="animate-spin" /> : <FileText />} Board report (PDF)</Button>
           </div>
         }
       />
 
-      <div className="grid grid-cols-2 gap-3 @xl/main:grid-cols-3 @4xl/main:grid-cols-5">
+      <Card className="no-print mb-4 flex flex-wrap items-center gap-2 p-3">
+        <div className="flex flex-wrap gap-1">
+          {[...presets, { id: "custom", label: "Custom" }].map((x) => (
+            <button key={x.id} onClick={() => setPreset(x.id)} className={cn("h-9 cursor-pointer rounded-lg px-3 text-xs font-semibold transition-colors", preset === x.id ? "bg-brand-500 text-white" : "text-muted hover:bg-brand-50 hover:text-brand-700")}>{x.label}</button>
+          ))}
+        </div>
+        {preset === "custom" ? (
+          <div className="flex items-center gap-1.5 text-xs text-muted">
+            <DatePicker value={custom.from} onChange={(d) => setCustom({ from: d, to: custom.to < d ? d : custom.to })} min={earliest} max={hub.today} today={hub.today} />
+            to
+            <DatePicker value={custom.to} onChange={(d) => setCustom({ from: custom.from > d ? d : custom.from, to: d })} min={earliest} max={hub.today} today={hub.today} />
+          </div>
+        ) : null}
+        <div className="ml-auto flex flex-wrap gap-2">
+          <Select value={terminal} onChange={(e) => { setTerminal(e.target.value as "" | "US" | "INTL"); setAirlineFilter(""); }} aria-label="Terminal">
+            <option value="">Both terminals</option>
+            <option value="US">US Departures</option>
+            <option value="INTL">International</option>
+          </Select>
+          <Select value={airlineFilter} onChange={(e) => setAirlineFilter(e.target.value)} aria-label="Airline">
+            <option value="">All airlines</option>
+            {hub.ds.airlines.filter((a) => !terminal || a.terminal === terminal).map((a) => <option key={a.code} value={a.code}>{a.name}</option>)}
+          </Select>
+        </div>
+      </Card>
+
+      {rep.highlights.length ? (
+        <Card className="mb-5 border-brand-100 bg-brand-50/50 p-5">
+          <p className="flex items-center gap-2 text-sm font-semibold text-brand-800"><Sparkles className="size-4" /> What stands out</p>
+          <ul className="mt-2 grid gap-x-8 gap-y-1.5 text-sm text-ink-900 @4xl/main:grid-cols-2">
+            {rep.highlights.map((h) => <li key={h} className="flex gap-2"><span className="mt-2 size-1.5 shrink-0 rounded-full bg-brand-500" />{h}</li>)}
+          </ul>
+        </Card>
+      ) : (
+        <Card className="mb-5 p-5 text-sm text-muted">No filed flight records in this period yet.</Card>
+      )}
+
+      <div className="grid grid-cols-2 gap-3 @xl/main:grid-cols-3 @4xl/main:grid-cols-6">
         <Stat label="On-time departure (D0)" value={pct(s.d0)} tone={otpTone(s.d0)} sub={delta(s.d0, prev.d0)} />
         <Stat label="Within 15 min (D15)" value={pct(s.d15)} tone={otpTone(s.d15)} sub={delta(s.d15, prev.d15)} />
         <Stat label="Team met SLA" value={pct(s.slaCompliance)} tone={s.slaCompliance >= 90 ? "ok" : "warn"} sub={delta(s.slaCompliance, prev.slaCompliance)} />
-        <Stat label="Avg boarding time" value={`${Math.round(s.avgBoarding)} min`} sub="boarding start → close" />
+        <Stat label="Passengers boarded" value={rep.pax.toLocaleString("en-US")} sub={rep.wheelchairs ? `${rep.wheelchairs} wheelchair assists` : `${s.flights} flights`} />
+        <Stat label="Avg boarding time" value={`${Math.round(s.avgBoarding)} min`} sub={rep.avgDelayMin ? `avg delay ${Math.round(rep.avgDelayMin)} min when late` : "boarding start → close"} />
         <Stat label="Delays caused by NFS" value={`${s.nfsDelays}`} tone={s.nfsDelays ? "warn" : "ok"} sub={`of ${s.nfsDelays + s.otherDelays} delays · rest outside NFS control`} />
       </div>
 
@@ -177,6 +218,46 @@ function Analytics() {
         </Card>
       </div>
 
+      <div className="mt-5 grid gap-5 @5xl/main:grid-cols-3">
+        <Card className="@5xl/main:col-span-1">
+          <CardHeader><div><CardTitle>Staffing and attendance</CardTitle><CardDescription>Rostered trained agents against SLA, absences and covers</CardDescription></div></CardHeader>
+          <CardContent className="space-y-2 text-sm">
+            <Row k="Shifts fully covered" v={rep.staffing.shifts ? `${rep.staffing.shiftsAtSla} of ${rep.staffing.shifts} · ${Math.round((rep.staffing.shiftsAtSla / rep.staffing.shifts) * 100)}%` : "—"} />
+            <Row k="Critically short shifts" v={String(rep.staffing.red)} tone={rep.staffing.red ? "text-bad" : undefined} />
+            <Row k="Sick call-outs" v={String(rep.staffing.callOuts)} />
+            <Row k="Days lost to sickness / no-show" v={String(rep.staffing.sickDays)} />
+            <Row k="All time away (days)" v={String(rep.staffing.absenceDays)} />
+            <Row k="Covers placed between teams" v={`${rep.staffing.covers}${rep.staffing.overrides ? ` · ${rep.staffing.overrides} override` : ""}`} />
+          </CardContent>
+        </Card>
+        <Card>
+          <CardHeader><div><CardTitle>Passengers and assistance</CardTitle><CardDescription>Boarded per day; wheelchair assists on top</CardDescription></div></CardHeader>
+          <CardContent className="h-56">
+            <ResponsiveContainer>
+              <BarChart data={trend} margin={{ top: 4, right: 8, left: -14, bottom: 0 }}>
+                <CartesianGrid stroke={GRID} vertical={false} />
+                <XAxis dataKey="day" tick={AXIS} axisLine={false} tickLine={false} interval="preserveStartEnd" minTickGap={16} />
+                <YAxis tick={AXIS} axisLine={false} tickLine={false} />
+                <Tooltip cursor={{ fill: "rgb(14 154 167 / 0.06)" }} />
+                <Bar dataKey="Passengers" fill={C1} radius={[4, 4, 0, 0]} barSize={14} />
+              </BarChart>
+            </ResponsiveContainer>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardHeader><div><CardTitle>Issues and feedback</CardTitle><CardDescription>Logged at the gate · from station managers</CardDescription></div></CardHeader>
+          <CardContent className="space-y-1.5 text-sm">
+            {rep.discrepancies.slice(0, 6).map((d) => <Row key={d.type} k={d.type} v={String(d.n)} />)}
+            {rep.discrepancies.length === 0 ? <p className="text-muted">No issues logged.</p> : null}
+            <div className="mt-2 flex gap-2 border-t border-line pt-3">
+              <Badge tone="ok">{rep.feedback.praise} compliments</Badge>
+              <Badge tone="bad">{rep.feedback.complaints} complaints</Badge>
+              {rep.feedback.open ? <Badge tone="warn">{rep.feedback.open} open</Badge> : null}
+            </div>
+          </CardContent>
+        </Card>
+      </div>
+
       <Card className="mt-5">
         <CardHeader><div><CardTitle>Lead performance</CardTitle><CardDescription>Flights led in the period. Delays are split by recorded cause so leads aren't marked down for late inbounds or weather.</CardDescription></div></CardHeader>
         <CardContent className="px-2 sm:px-5">
@@ -199,7 +280,16 @@ function Analytics() {
           <Pagination paged={leadPage} noun="leads" sizes={[8, 16]} className="mx-1 mt-1" />
         </CardContent>
       </Card>
-      <p className="mt-4 text-[11px] text-muted">SLA compliance compares the logged team on each flight to the airline's minimums ({logs.filter((l) => !slaMet(l, airlines.get(l.airline)!)).length} flights short in the period). SLA figures are placeholders until NFS confirms them.</p>
+      <p className="mt-4 text-[11px] text-muted">SLA compliance compares the logged team on each flight to the airline&apos;s minimums ({logs.filter((l) => airlines.get(l.airline) && !slaMet(l, airlines.get(l.airline)!)).length} flights short in the period). SLA figures are placeholders until NFS confirms them. The board report PDF uses exactly these numbers.</p>
     </>
+  );
+}
+
+function Row({ k, v, tone }: { k: string; v: string; tone?: string }) {
+  return (
+    <div className="flex items-center justify-between gap-3">
+      <span className="text-muted">{k}</span>
+      <span className={cn("font-semibold tabular", tone)}>{v}</span>
+    </div>
   );
 }
