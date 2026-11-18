@@ -145,7 +145,7 @@ export function AirlineDialog({ airline, onClose }: { airline?: Airline; onClose
 
         <div className="mt-5 grid gap-3 sm:grid-cols-2">
           <Field label="Aircraft (comma separated)"><Input value={aircraft} onChange={(e) => setAircraft(e.target.value)} placeholder="B737-800, A320" /></Field>
-          <Field label="Required training courses"><Input value={training} onChange={(e) => setTraining(e.target.value)} placeholder="Airline DCS, Jet Bridge Operation" /></Field>
+          <Field label="Required training courses"><Input value={training} onChange={(e) => setTraining(e.target.value)} placeholder="Airline gate procedures, Jet Bridge Operation" /></Field>
         </div>
 
         <p className="mt-5 text-xs font-bold uppercase tracking-wide text-muted">Station manager</p>
