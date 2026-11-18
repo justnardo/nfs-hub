@@ -97,7 +97,11 @@ interface HubState {
   saveLog: (log: GateLog, change?: { type: string; payload: Record<string, unknown> }) => void;
   addReassignment: (r: Omit<Reassignment, "id" | "at">, log?: boolean) => string;
   removeReassignment: (id: string) => void;
-  setFeedbackStatus: (id: string, status: FeedbackItem["status"]) => void;
+  setFeedbackStatus: (id: string, status: FeedbackItem["status"], response?: string) => void;
+  /** Record feedback from a station manager (logged by NFS, or sent through the airline's link). */
+  logFeedback: (f: Omit<FeedbackItem, "id" | "status" | "at">) => void;
+  /** Turn an airline's private feedback link on or off; returns the token when on. */
+  setFeedbackLink: (code: string, on: boolean) => string | null;
   setCells: (edits: CellEdit[], meta?: CellMeta) => void;
   revertCells: (keys: { personId: string; date: string }[]) => void;
   applyFix: (fix: Fix, overrideReason?: string | null) => void;
@@ -188,6 +192,8 @@ export function HubProvider({ children }: { children: React.ReactNode }) {
     let unsubRemote = () => {};
     if (!remoteEnabled()) setSynced(true);
     if (remoteEnabled()) {
+      // Don't hold public pages (staff roster link, airline feedback link) hostage to a bad connection.
+      window.setTimeout(() => setSynced(true), 8000);
       void pullRemote();
       void pullRecent().then(() => setEvents(localEvents()));
       unsubRemote = subscribeState(() => void pullRemote());
@@ -307,8 +313,11 @@ export function HubProvider({ children }: { children: React.ReactNode }) {
   const logByFlight = React.useMemo(() => new Map(gateLogs.map((g) => [g.flightId, g])), [gateLogs]);
   const reassignments = React.useMemo(() => (Object.values(state.reassignment) as Reassignment[]).sort((a, b) => a.at.localeCompare(b.at)), [state.reassignment]);
   const feedback = React.useMemo(() => {
-    const st = state.feedback as Record<string, { status: FeedbackItem["status"] }>;
-    return ds.feedback.map((f) => (st[f.id] ? { ...f, status: st[f.id].status } : f));
+    const st = state.feedback as Record<string, Partial<FeedbackItem>>;
+    const seeded = ds.feedback.map((f) => (st[f.id] ? { ...f, ...st[f.id], id: f.id } : { ...f, source: f.source ?? ("seed" as const), rating: f.rating ?? seedRating(f) }));
+    const seedIds = new Set(ds.feedback.map((f) => f.id));
+    const added = Object.entries(st).filter(([id, v]) => !seedIds.has(id) && v && typeof v.airline === "string").map(([, v]) => v as FeedbackItem);
+    return [...added, ...seeded].sort((a, b) => (b.at ?? b.date).localeCompare(a.at ?? a.date));
   }, [ds, state.feedback]);
   const requests = React.useMemo(() => (Object.values(state.request) as PasswordRequest[]).sort((a, b) => b.at.localeCompare(a.at)), [state.request]);
   const rosterEdits = React.useMemo<RosterEdit[]>(() => [...overrides.values()].map((o) => ({ personId: o.personId, date: o.date, shift: o.shift, at: o.at })), [overrides]);
@@ -398,7 +407,16 @@ export function HubProvider({ children }: { children: React.ReactNode }) {
     },
     [write, entry, nameOf, state.reassignment],
   );
-  const setFeedbackStatus = React.useCallback((id: string, status: FeedbackItem["status"]) => write([{ kind: "feedback", id, payload: { status } }]), [write]);
+  const setFeedbackStatus = React.useCallback(
+    (id: string, status: FeedbackItem["status"], response?: string) => {
+      const cur = feedback.find((f) => f.id === id);
+      if (!cur) return;
+      const isAdded = !ds.feedback.some((f) => f.id === id);
+      const patch = { status, ...(response !== undefined ? { response } : {}) };
+      write([{ kind: "feedback", id, payload: isAdded ? { ...cur, ...patch } : { ...(state.feedback[id] ?? {}), ...patch } }]);
+    },
+    [write, feedback, ds.feedback, state.feedback],
+  );
 
   /** Rows that put cells to given shifts: an override, or none when it matches the plan. */
   const cellRows = React.useCallback(
@@ -572,6 +590,33 @@ export function HubProvider({ children }: { children: React.ReactNode }) {
       if (rows.length) write(rows);
     },
     [write, state.notice, session],
+  );
+  const logFeedback = React.useCallback(
+    (f: Omit<FeedbackItem, "id" | "status" | "at">) => {
+      const item: FeedbackItem = { ...f, id: `fb-${crypto.randomUUID().slice(0, 8)}`, status: "open", at: new Date().toISOString() };
+      write([{ kind: "feedback", id: item.id, payload: item }]);
+      const a = generated.airlines.find((x) => x.code === f.airline);
+      const fl = f.flightId ? generated.flights.find((x) => x.id === f.flightId) : undefined;
+      const to = generated.people.filter((p) => p.role === "manager" || (f.kind === "complaint" && p.role === "supervisor" && p.homeTerminal === a?.terminal)).map((p) => p.id);
+      notify({
+        to,
+        kind: "team",
+        title: `${f.kind === "complaint" ? "Complaint" : "Compliment"} from ${a?.name ?? f.airline}${fl ? ` · ${fl.flightNo}` : ""}`,
+        body: `${f.rating ? `${"★".repeat(f.rating)}${"☆".repeat(5 - f.rating)} · ` : ""}${f.summary.slice(0, 120)}`,
+        href: "/feedback",
+      });
+    },
+    [write, generated, notify],
+  );
+  const setFeedbackLink = React.useCallback(
+    (code: string, on: boolean) => {
+      const a = airlines.find((x) => x.code === code);
+      if (!a) return null;
+      const token = on ? newShareToken() : null;
+      write([{ kind: "airline", id: code, payload: { ...a, feedbackToken: token } }, entry({ action: "airline.change", summary: `${on ? "Turned on" : "Turned off"} the feedback link for ${a.name}`, teams: [code], ref: code })]);
+      return token;
+    },
+    [airlines, write, entry],
   );
   const absences = React.useMemo(() => [...absenceList].sort((a, b) => b.from.localeCompare(a.from)), [absenceList]);
   const absenceOn = React.useCallback((personId: string, date: string) => absences.find((a) => a.personId === personId && absenceCovers(a, date)), [absences]);
@@ -859,6 +904,8 @@ export function HubProvider({ children }: { children: React.ReactNode }) {
     addReassignment,
     removeReassignment,
     setFeedbackStatus,
+    logFeedback,
+    setFeedbackLink,
     setCells,
     revertCells,
     applyFix,
@@ -900,6 +947,13 @@ export function HubProvider({ children }: { children: React.ReactNode }) {
   };
 
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;
+}
+
+/** Seeded feedback predates star ratings; give each a stable one so averages read sensibly. */
+function seedRating(f: FeedbackItem): number {
+  let h = 0;
+  for (const c of f.id) h = (h * 31 + c.charCodeAt(0)) >>> 0;
+  return f.kind === "praise" ? 4 + (h % 2) : 2 + (h % 2);
 }
 
 export function useHub(): HubState {

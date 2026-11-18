@@ -35,6 +35,8 @@ export interface Airline {
   charter?: boolean;
   /** When check-in opens and closes and when boarding should start, in minutes before STD. */
   timings?: AirlineTimings;
+  /** Private link the station manager uses to send feedback without signing in. */
+  feedbackToken?: string | null;
 }
 
 export interface AirlineTimings {
@@ -252,6 +254,16 @@ export interface FeedbackItem {
   summary: string;
   personIds: string[];
   status: "open" | "reviewed" | "closed";
+  /** 1–5 stars, when given. */
+  rating?: number;
+  category?: string;
+  /** How it reached NFS: the airline's feedback link, or logged by NFS from an email, call or visit. */
+  source?: "link" | "email" | "phone" | "in person" | "seed";
+  loggedBy?: string;
+  at?: string;
+  contact?: string;
+  /** What NFS did about it, shown on the record. */
+  response?: string;
 }
 
 export interface HubEvent {
