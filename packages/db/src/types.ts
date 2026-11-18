@@ -183,7 +183,14 @@ export interface GateLog {
   leadId: string;
   team: TeamMember[];
   events: Partial<Record<GateEventType, string>>; // HH:mm local
+  /** Entered by the lead from the airline DCS / load sheet at check-in close. */
+  paxBooked?: number | null;
+  paxCheckedIn?: number | null;
   paxBoarded: number | null;
+  /** Wheelchair passengers (WCHR/WCHS/WCHC) handled on this flight. */
+  wheelchairs?: number | null;
+  /** When final passenger figures were handed to the crew (HH:mm). */
+  figuresToCrew?: string | null;
   discrepancies: Discrepancy[];
   delayMinutes: number;
   delayCause: DelayCause | null;

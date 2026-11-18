@@ -380,6 +380,7 @@ export function generateDataset(today: string, nowMinutes: number, config: Datas
     }
     const noShows = discrepancies.filter((d) => d.type === "No-show").length * fr.int(1, 3);
 
+    const boarded = complete ? Math.max(0, f.paxBooked - noShows - fr.int(0, 2)) : null;
     gateLogs.push({
       id: `log-${f.id}`,
       flightId: f.id,
@@ -388,7 +389,11 @@ export function generateDataset(today: string, nowMinutes: number, config: Datas
       leadId: lead.id,
       team,
       events,
-      paxBoarded: complete ? Math.max(0, f.paxBooked - noShows - fr.int(0, 2)) : null,
+      paxBooked: complete || bStart <= nowMinutes ? f.paxBooked : null,
+      paxCheckedIn: boarded === null ? null : boarded + noShows,
+      paxBoarded: boarded,
+      wheelchairs: complete ? fr.int(0, 4) : null,
+      figuresToCrew: complete ? fromMinutes(dClose - fr.int(2, 6) + (fr.chance(0.12) ? fr.int(6, 10) : 0)) : null,
       discrepancies: complete ? discrepancies : [],
       delayMinutes: complete ? Math.max(0, delay) : 0,
       delayCause: complete && delay > 0 ? cause : null,

@@ -40,10 +40,10 @@ function Records() {
   const top = React.useRef<HTMLParagraphElement>(null);
 
   const exportCsv = () => {
-    const head = ["Date", "Flight", "Airline", "Destination", "STD", "Lead", "Team", "Boarding start", "Boarding close", "Door close", "Pushback", "Delay min", "Cause", "Pax booked", "Pax boarded", "Discrepancies", "SLA met"];
+    const head = ["Date", "Flight", "Airline", "Destination", "STD", "Lead", "Team", "Boarding start", "Boarding close", "Door close", "Pushback", "Delay min", "Cause", "Pax booked", "Pax checked in", "Pax boarded", "Wheelchairs", "Figures to crew", "Discrepancies", "SLA met"];
     const lines = rows.map(({ l, f }) => [
       f.date, f.flightNo, l.airline, f.destination, f.std, personName(hub.people.get(l.leadId)), new Set(l.team.map((t) => t.personId)).size, l.events.boarding_start ?? "", l.events.boarding_close ?? "",
-      l.events.door_close ?? "", l.events.pushback ?? "", l.delayMinutes, l.delayCause ?? "", f.paxBooked, l.paxBoarded ?? "", l.discrepancies.map((d) => d.type).join("; "), slaMet(l, map.get(l.airline)!) ? "Y" : "N",
+      l.events.door_close ?? "", l.events.pushback ?? "", l.delayMinutes, l.delayCause ?? "", l.paxBooked ?? "", l.paxCheckedIn ?? "", l.paxBoarded ?? "", l.wheelchairs ?? "", l.figuresToCrew ?? "", l.discrepancies.map((d) => d.type).join("; "), slaMet(l, map.get(l.airline)!) ? "Y" : "N",
     ].map((v) => `"${String(v).replace(/"/g, '""')}"`).join(","));
     const blob = new Blob([[head.join(","), ...lines].join("\n")], { type: "text/csv" });
     const a = document.createElement("a");

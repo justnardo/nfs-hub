@@ -104,9 +104,16 @@ function Record() {
                 })}
               </div>
             </div>
-            <div className="grid grid-cols-2 gap-2 text-center">
-              <div className="rounded-lg bg-surface p-2"><div className="font-display text-lg font-semibold tabular">{f.paxBooked}</div><div className="text-[10px] font-semibold uppercase text-muted">Booked</div></div>
-              <div className="rounded-lg bg-surface p-2"><div className="font-display text-lg font-semibold tabular">{log.paxBoarded ?? "—"}</div><div className="text-[10px] font-semibold uppercase text-muted">Boarded</div></div>
+            <div className="grid grid-cols-3 gap-2 text-center">
+              {([
+                ["Booked", log.paxBooked],
+                ["Checked in", log.paxCheckedIn],
+                ["Boarded", log.paxBoarded],
+                ["Wheelchairs", log.wheelchairs],
+                ["Figures to crew", log.figuresToCrew],
+              ] as [string, number | string | null | undefined][]).map(([k, v]) => (
+                <div key={k} className="rounded-lg bg-surface p-2"><div className="font-display text-lg font-semibold tabular">{v ?? "—"}</div><div className="text-[10px] font-semibold uppercase text-muted">{k}</div></div>
+              ))}
             </div>
           </div>
         </div>

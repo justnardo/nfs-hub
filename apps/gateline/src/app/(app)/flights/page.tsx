@@ -121,7 +121,7 @@ function Flights() {
                           <Td className="tabular font-semibold">{f.std}</Td>
                           <Td className="tabular">{f.gate}</Td>
                           <Td className="hidden @4xl/main:table-cell text-xs">{log ? <PersonLink p={hub.people.get(log.leadId)} /> : "—"}</Td>
-                          <Td className="hidden @5xl/main:table-cell tabular text-xs">{log?.paxBoarded ?? "—"}/{f.paxBooked}</Td>
+                          <Td className="hidden @5xl/main:table-cell tabular text-xs">{log?.paxBoarded ?? "—"}/{log?.paxBooked ?? (f.adhoc ? f.paxBooked : "—")}</Td>
                           <Td><div className="flex items-center gap-1.5"><FlightStatusBadge status={s.status} />{log && log.delayMinutes > 0 ? <span className="text-[11px] font-semibold text-bad">+{log.delayMinutes}m</span> : null}</div></Td>
                         </Tr>
                       );
