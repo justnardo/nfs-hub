@@ -1,7 +1,7 @@
 /* NFS hub design tokens — shared by Gateline, Rampline and future modules. */
 @theme {
-  --font-sans: "Inter Variable", ui-sans-serif, system-ui, sans-serif;
-  --font-display: "Space Grotesk Variable", "Inter Variable", ui-sans-serif, sans-serif;
+  --font-sans: "Barlow", ui-sans-serif, system-ui, sans-serif;
+  --font-display: "Barlow Semi Condensed", "Barlow", ui-sans-serif, sans-serif;
 
   --color-ink-950: #07121d;
   --color-ink-900: #0b1b2b;

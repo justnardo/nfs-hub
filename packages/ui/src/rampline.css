@@ -26,7 +26,7 @@
 
 @theme inline {
   /* Headings: shadcn's slot, Gateline's display face. */
-  --font-heading: 'Space Grotesk Variable', 'Inter Variable', ui-sans-serif, sans-serif;
+  --font-heading: 'Barlow Semi Condensed', 'Barlow', ui-sans-serif, sans-serif;
 
   /* Roster bands and cells. */
   --color-band-early: var(--band-early);
