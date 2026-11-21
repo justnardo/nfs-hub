@@ -19,6 +19,7 @@ export function DatePicker({
   max,
   today,
   marks,
+  markLabel = "Charter",
   label,
 }: {
   value: string;
@@ -27,6 +28,8 @@ export function DatePicker({
   max?: string;
   today: string;
   marks?: Set<string>;
+  /** What a dot under a date means, shown in the calendar's footer. */
+  markLabel?: string;
   label?: React.ReactNode;
 }) {
   const [open, setOpen] = React.useState(false);
@@ -138,7 +141,7 @@ export function DatePicker({
                 </button>
               ))}
             </div>
-            {marks?.size ? <span className="flex items-center gap-1 text-[11px] text-muted"><span className="size-1.5 rounded-full bg-gold-500" /> Charter</span> : null}
+            {marks?.size ? <span className="flex items-center gap-1 text-[11px] text-muted"><span className="size-1.5 rounded-full bg-gold-500" /> {markLabel}</span> : null}
           </div>
         </div>
       ) : null}
