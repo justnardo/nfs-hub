@@ -1,16 +1,17 @@
 "use client";
 import * as React from "react";
-import { ChevronLeft, ChevronRight, Copy, Download, Loader2, Plus, Rows3, Trash2 } from "lucide-react";
+import { ChevronLeft, ChevronRight, Copy, Download, FileSpreadsheet, Loader2, Plus, Rows3, Trash2 } from "lucide-react";
 import { Badge, Button, Dialog, DialogContent, Input, Select, cn } from "@nfs/ui";
 import { addDays, formatDate, weekStart, type Airline, type LineGroup, type Person, type RosterEntry, type RosterLine } from "@nfs/db";
 import { entriesFromLines, lineAt, lineGroup, lineLabels, lineMembers, normaliseSpan, rosterSheet, standingLines, type SheetBlock } from "@nfs/rules";
 import { useHub } from "@/lib/store";
-import { cellTime, downloadRosterSheet, empNo, sheetName, weekHead } from "@/lib/sheet-pdf";
+import { cellTime, downloadRosterSheet, downloadRosterSheetXlsx, empNo, sheetName, weekHead } from "@/lib/sheet-pdf";
 import { AirlineChip } from "./ops";
 
 const DAYS = ["SUN", "MON", "TUE", "WED", "THU", "FRI", "SAT"];
 const GROUPS: { key: LineGroup | undefined; label: string }[] = [{ key: undefined, label: "Agents" }, { key: "supervisor", label: "Supervisors" }, { key: "lead", label: "Leads" }];
-export const sheetHeading = (a: Airline) => a.sheetLabel || a.name.split(" ")[0].toUpperCase();
+/** Heading over the names: the airline's own, else its name without "Airlines"/"Airways" ("BREEZE", "AIR CANADA"). */
+export const sheetHeading = (a: Airline) => a.sheetLabel || a.name.replace(/\s+(air\s*lines|airlines|airways)$/i, "").toUpperCase();
 
 /** Everyone on an airline's printed roster: agents and leads, plus supervisors on its lines. */
 export function useLineMembers(airline: Airline | undefined): Person[] {
@@ -105,6 +106,7 @@ export function RosterSheetDialog({ airline, initialWeek, onClose }: { airline: 
             </div>
             <span className="flex-1" />
             <Button variant="outline" className="h-11 sm:h-9" onClick={onClose}>Close</Button>
+            <Button variant="outline" className="h-11 sm:h-9" disabled={!blocks.length} onClick={() => void downloadRosterSheetXlsx({ airlineName: airline.name, sheetLabel: sheetHeading(airline), blocks, noticeHours: notice, filename: `NFS-${airline.code}-roster-${month}.xlsx` })}><FileSpreadsheet /> Excel</Button>
             <Button
               className="h-11 sm:h-9"
               disabled={!blocks.length || busy}

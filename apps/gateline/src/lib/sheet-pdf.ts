@@ -118,3 +118,60 @@ export async function downloadRosterSheet(spec: { airlineName: string; sheetLabe
   }
   doc.save(spec.filename);
 }
+
+/**
+ * The same sheet as an Excel file, in the layout the import reads back: edit it in Excel and
+ * import it again to change the lines.
+ */
+export async function downloadRosterSheetXlsx(spec: { airlineName: string; sheetLabel: string; blocks: SheetBlock[]; noticeHours: number; filename: string }) {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const mod: any = await import("exceljs/dist/exceljs.min.js");
+  const ExcelJS = mod.default ?? mod;
+  const wb = new ExcelJS.Workbook();
+  wb.creator = "Gateline · Nassau Flight Services";
+  const ws = wb.addWorksheet(spec.airlineName.slice(0, 31));
+  const DAYS_ = ["SUN", "MON", "TUE", "WED", "THU", "FRI", "SAT"];
+  const bold = { bold: true };
+  const head = { type: "pattern", pattern: "solid", fgColor: { argb: "FF0E9AA7" } };
+  const border = { top: { style: "thin", color: { argb: "FFCDD6DE" } }, left: { style: "thin", color: { argb: "FFCDD6DE" } }, bottom: { style: "thin", color: { argb: "FFCDD6DE" } }, right: { style: "thin", color: { argb: "FFCDD6DE" } } };
+  ws.getCell(1, 1).value = spec.airlineName.toUpperCase();
+  ws.getCell(1, 1).font = { bold: true, size: 14 };
+  let r = 3;
+  spec.blocks.forEach((b) => {
+    const header = ["", ...DAYS_, spec.sheetLabel, "EMP#", ...b.weekStarts.map(weekHead)];
+    header.forEach((h, i) => {
+      const c = ws.getCell(r, i + 1);
+      c.value = h;
+      c.font = { ...bold, color: { argb: "FFFFFFFF" } };
+      c.fill = head;
+      c.border = border;
+      c.alignment = { horizontal: "center" };
+    });
+    r++;
+    for (const row of b.rows) {
+      const vals = [row.label, ...row.days.map(cellTime), sheetName(row.person.firstName, row.person.lastName), Number(empNo(row.person.staffNo)) || empNo(row.person.staffNo), ...row.weeks];
+      vals.forEach((v, i) => {
+        const c = ws.getCell(r, i + 1);
+        c.value = v;
+        c.border = border;
+        c.alignment = { horizontal: i === 8 ? "left" : "center" };
+        if (i === 0 || i === 8) c.font = bold;
+        if (v === "OFF") c.font = { color: { argb: "FF7B93A8" } };
+      });
+      r++;
+    }
+    r += 2;
+  });
+  const note = ws.getCell(r, 1);
+  note.value = `NOTE: ROSTERED SHIFTS SUBJECT TO CHANGE WITH A MINIMUM ${spec.noticeHours} HOURS NOTICE BY VERBAL OR WRITTEN COMMUNICATION`;
+  note.font = { bold: true, color: { argb: "FFB91C1C" } };
+  note.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FFFFEC99" } };
+  ws.columns = [{ width: 5 }, ...DAYS_.map(() => ({ width: 12 })), { width: 22 }, { width: 8 }, ...Array.from({ length: 6 }, () => ({ width: 9 }))];
+  const buf = await wb.xlsx.writeBuffer();
+  const url = URL.createObjectURL(new Blob([buf], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" }));
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = spec.filename;
+  a.click();
+  setTimeout(() => URL.revokeObjectURL(url), 2000);
+}

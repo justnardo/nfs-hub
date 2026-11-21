@@ -2,7 +2,7 @@
 import * as React from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { AlertTriangle, CalendarPlus, CheckCircle2, ChevronLeft, ChevronRight, Download, FileText, History, Loader2, Lock, Rows3, Sheet, Settings2, Sparkles, Users, XCircle } from "lucide-react";
+import { AlertTriangle, CalendarPlus, CheckCircle2, ChevronLeft, ChevronRight, Download, FileText, FileUp, History, Loader2, Lock, Rows3, Sheet, Settings2, Sparkles, Users, XCircle } from "lucide-react";
 import { Avatar, Badge, Button, Card, CardContent, CardDescription, CardHeader, CardTitle, Dialog, DialogContent, Label, PageHeader, Select, Textarea, cn } from "@nfs/ui";
 import { ROLE_LABEL, can } from "@nfs/auth";
 import { addDays, formatDate, rangeDays, shiftDemand, weekStart, type Person, type ShiftCode } from "@nfs/db";
@@ -22,6 +22,7 @@ import { ABSENCE_TYPES, applyAbsences } from "@/lib/absence";
 import { allTeams, buildPeriod, periodEnd, rosterSections, teamLabel, teamMembers, withPeriod, type TeamKey } from "@/lib/periods";
 import { downloadRosterPdf } from "@/lib/pdf";
 import { LinesDialog, RosterSheetDialog } from "@/components/lines";
+import { RosterImportDialog } from "@/components/roster-import-dialog";
 
 export default function RostersPage() {
   return (
@@ -76,6 +77,7 @@ function Rosters() {
   const [teamOpen, setTeamOpen] = React.useState(false);
   const [sheetOpen, setSheetOpen] = React.useState(false);
   const [linesOpen, setLinesOpen] = React.useState(false);
+  const [importOpen, setImportOpen] = React.useState(false);
   const days = rangeDays(ws, 7);
   const [day, setDay] = React.useState(() => (days.includes(hub.today) ? hub.today : days[0]));
   React.useEffect(() => setDay((d) => (days.includes(d) ? d : days.includes(hub.today) ? hub.today : days[0])), [ws]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -153,6 +155,7 @@ function Rosters() {
             {assign && airline ? <Button variant="outline" onClick={() => setTeamOpen(true)}><Users /> Team</Button> : null}
             {airline ? <Button variant="outline" onClick={() => setSheetOpen(true)}><Sheet /> Roster sheet</Button> : null}
             {editable && airline ? <Button variant="outline" onClick={() => setLinesOpen(true)}><Rows3 /> Lines</Button> : null}
+            {editable ? <Button variant="outline" onClick={() => setImportOpen(true)}><FileUp /> Import</Button> : null}
             <Button variant="outline" onClick={exportPdf} disabled={pdfBusy || unrostered}>{pdfBusy ? <Loader2 className="animate-spin" /> : <FileText />} PDF</Button>
             <Button variant="outline" onClick={exportCsv} disabled={unrostered}><Download /> CSV</Button>
             {editable && addDays(ws, 6) >= hub.today && !unrostered && !showingDraft ? <Button variant="outline" onClick={() => setOptOpen(true)}><Sparkles /> Optimise week</Button> : null}
@@ -448,6 +451,7 @@ function Rosters() {
       {optOpen ? <OptimiseDialog team={team} members={members} ws={ws} onClose={() => setOptOpen(false)} /> : null}
       {teamOpen && airline ? <TeamMembersDialog airline={airline} onClose={() => setTeamOpen(false)} /> : null}
       {sheetOpen && airline ? <RosterSheetDialog airline={airline} initialWeek={ws} onClose={() => setSheetOpen(false)} /> : null}
+      {importOpen ? <RosterImportDialog airline={airline} onClose={() => setImportOpen(false)} /> : null}
       {linesOpen && airline ? <LinesDialog airline={airline} week={hub.today} onClose={() => setLinesOpen(false)} /> : null}
       {createOpen ? <CreateRosterDialog defaultTeam={team} defaultStart={unrostered ? ws : undefined} onClose={() => setCreateOpen(false)} /> : null}
     </>

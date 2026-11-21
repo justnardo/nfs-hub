@@ -179,7 +179,9 @@ export function rosterSheet(airline: Airline, members: Person[], weekStarts: str
       const label = labelFor(p, ws, days);
       // A line whose pattern changes part-way (same letter, new times) starts a new block, as on the paper roster.
       // Moving to another line just shows the new letter in that week's column.
-      if (seg && lines.length && label === seg.labels[seg.labels.length - 1] && keyOf(seg.last) !== keyOf(days)) {
+      // Without lines, every week pattern is its own line, so a change of pattern always starts a new block:
+      // that keeps the sheet self-contained (every letter in the week columns is a row somewhere).
+      if (seg && keyOf(seg.last) !== keyOf(days) && (!lines.length || label === seg.labels[seg.labels.length - 1])) {
         flush();
         seg = null;
       }
