@@ -8,19 +8,19 @@ import { SHIFTS, formatDate, type Airline, type FlightStatus, type Person } from
 import { checkReassignment, suggestFixes, type CoverageCell, type CoverageLevel } from "@nfs/rules";
 import { useHub, useEngineInput, personName } from "@/lib/store";
 
-export function AirlineChip({ airline, size = "sm" }: { airline: Airline; size?: "sm" | "md" }) {
+export function AirlineChip({ airline, size = "sm" }: { airline: Airline; size?: "sm" | "md" | "lg" }) {
   const [failed, setFailed] = React.useState(false);
   const tile =
     airline.logoUrl && !failed ? (
       <span
         title={airline.name}
-        className={cn("inline-grid shrink-0 place-items-center overflow-hidden rounded-md border border-line bg-white", size === "md" ? "h-8 w-12 p-1" : "h-6 w-9 p-0.5")}
+        className={cn("inline-grid shrink-0 place-items-center overflow-hidden rounded-md border border-line bg-white", size === "lg" ? "h-11 w-14 p-1.5" : size === "md" ? "h-8 w-12 p-1" : "h-6 w-9 p-0.5")}
       >
         {/* eslint-disable-next-line @next/next/no-img-element */}
         <img src={airline.logoUrl} alt={airline.name} loading="lazy" onError={() => setFailed(true)} className="max-h-full max-w-full object-contain" />
       </span>
     ) : (
-      <span title={airline.name} className={cn("inline-grid shrink-0 place-items-center rounded-md font-display font-bold text-white", size === "md" ? "h-7 min-w-9 px-1.5 text-[11px]" : "h-5 min-w-7 px-1 text-[9.5px]")} style={{ background: airline.colour }}>
+      <span title={airline.name} className={cn("inline-grid shrink-0 place-items-center rounded-md font-display font-bold text-white", size === "lg" ? "h-11 min-w-14 px-2 text-sm" : size === "md" ? "h-7 min-w-9 px-1.5 text-[11px]" : "h-5 min-w-7 px-1 text-[9.5px]")} style={{ background: airline.colour }}>
         {airline.code}
       </span>
     );

@@ -1,9 +1,9 @@
 "use client";
 import * as React from "react";
 import Link from "next/link";
-import { Siren, Activity, AlertTriangle, ArrowRight, BadgeCheck, Clock, GraduationCap, PlaneTakeoff, Users } from "lucide-react";
+import { Siren, AlertTriangle, ArrowRight, BadgeCheck, Clock, GraduationCap, PlaneTakeoff, Users } from "lucide-react";
 import { Badge, Button, Card, CardContent, CardDescription, CardHeader, CardTitle, PageHeader, Stat, Table, Td, Th, Tr, cn } from "@nfs/ui";
-import { GATE_EVENT_LABEL, formatDate, type GateEventType } from "@nfs/db";
+import { formatDate } from "@nfs/db";
 import { coverageGrid, expiringSoon, type CoverageCell } from "@nfs/rules";
 import { timingsFor } from "@nfs/db";
 import { deriveStatus } from "@nfs/flights";
@@ -12,6 +12,7 @@ import { RequirePerm } from "@/components/guard";
 import { AirlineChip, FlightStatusBadge, LEVEL_STYLE, PersonLink, ReassignDialog } from "@/components/ops";
 import { pct, summarise } from "@/lib/metrics";
 import { Pagination, usePaged } from "@/components/pagination";
+import { LiveActivity } from "@/components/live-activity";
 
 export default function TodayPage() {
   return (
@@ -40,8 +41,6 @@ function Today() {
     .map((p) => ({ p, recs: expiringSoon(p, hub.today, 30) }))
     .filter((x) => x.recs.length)
     .slice(0, 6);
-  const feed = [...hub.events].reverse().filter((e) => e.type !== "gate.door_close" && e.type !== "gate.pushback").slice(0, 60);
-  const feedPage = usePaged(feed, 6);
   const depPage = usePaged(statuses, 8);
   const upcoming = statuses.filter((x) => x.s.status !== "Departed").slice(0, 1)[0];
 
@@ -66,6 +65,9 @@ function Today() {
         <Stat label="Coverage gaps" value={gaps.length} tone={gaps.some((g) => g.level === "red") ? "bad" : gaps.length ? "warn" : "ok"} sub={gaps.length ? gaps.map((g) => `${g.airline} ${g.shift}`).join(" · ") : "all shifts at SLA"} icon={<Users />} />
         <Stat label="Discrepancies" value={openDisc.length} sub="logged at the gate today" icon={<AlertTriangle />} />
       </div>
+
+      {/* On phones and narrow screens the live feed sits right under the tiles, not at the bottom. */}
+      <LiveActivity className="mt-5 @5xl/main:hidden" perPage={5} />
 
       <div className="mt-5 grid gap-5 @5xl/main:grid-cols-[1fr_380px]">
         <Card>
@@ -146,36 +148,7 @@ function Today() {
             </CardContent>
           </Card>
 
-          <Card>
-            <CardHeader><div><CardTitle>Live gate activity</CardTitle><CardDescription>Events from leads' phones, shared with Rampline</CardDescription></div><Activity className="size-4 text-brand-500" /></CardHeader>
-            <CardContent className="space-y-2">
-              {feed.length === 0 ? <p className="text-sm text-muted">Waiting for the first tap from a gate. Open the gate log on a phone to see events land here.</p> : null}
-              {feedPage.rows.map((e) => {
-                const f = hub.ds.flights.find((x) => x.id === e.payload.flightId);
-                const ev = GATE_EVENT_LABEL[e.payload.event as GateEventType];
-                const who = e.payload.personId ? personName(hub.people.get(e.payload.personId as string)) : "";
-                const at = typeof e.payload.at === "string" && /^\d{2}:\d{2}$/.test(e.payload.at) ? e.payload.at : "";
-                const label =
-                  e.type === "gate.event" ? `${ev}${at ? ` · ${at}` : ""}`
-                  : e.type === "gate.event_undone" ? `Undid ${ev ? ev.toLowerCase() : "an event"}`
-                  : e.type === "agent.reassigned" ? `Cover placed${who ? ` · ${who}` : ""}`
-                  : e.type === "gate.filed" ? "Record filed"
-                  : e.type === "gate.discrepancy" ? "Discrepancy logged"
-                  : e.type === "gate.team" ? "Team set"
-                  : e.type === "roster.changed" ? "Roster changed"
-                  : e.type.replace(/[._]/g, " ");
-                return (
-                  <div key={e.id} className="flex items-center gap-2 text-sm">
-                    <span className={cn("size-1.5 shrink-0 rounded-full", e.type === "gate.event_undone" ? "bg-gold-400" : "bg-brand-500")} />
-                    <span className="w-16 shrink-0 font-semibold tabular">{f?.flightNo ?? (e.payload.toAirline as string) ?? ""}</span>
-                    <span className="min-w-0 flex-1 truncate text-muted">{label}</span>
-                    <span className="text-[11px] text-ink-400 tabular">{new Date(e.at).toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit", timeZone: "America/Nassau" })}</span>
-                  </div>
-                );
-              })}
-              <Pagination paged={feedPage} noun="events" sizes={[6]} className="mt-2" />
-            </CardContent>
-          </Card>
+          <LiveActivity className="hidden @5xl/main:block" />
         </div>
       </div>
 

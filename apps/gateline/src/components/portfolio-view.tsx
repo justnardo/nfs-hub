@@ -12,7 +12,7 @@ import { eligibleFor } from "@nfs/rules";
 import { AbsenceChip, AbsenceDialog } from "./absence";
 import { ABSENCE_TYPES, type Absence } from "@/lib/absence";
 import { useHub, personName } from "@/lib/store";
-import { AirlineChip, PersonLink, ShiftChip } from "@/components/ops";
+import { AirlineChip, PersonLink } from "@/components/ops";
 import { buildPortfolio } from "@/lib/portfolio";
 import { pct } from "@/lib/metrics";
 
@@ -52,14 +52,14 @@ export function PortfolioView({ p }: { p: Person }) {
           </span>
         }
         actions={
-          <div className="flex items-center gap-3">
+          <div className="flex flex-wrap items-center gap-2 sm:gap-3">
             {canAbsence ? <Button variant="outline" onClick={() => setAbsence("new")}><UserX /> Sick or leave</Button> : null}
             {manage && !former ? <Button variant="outline" onClick={() => setEditing(true)}><Pencil /> Edit assignment</Button> : null}
             {isManager && !former && ["agent", "lead", "supervisor"].includes(p.role) ? <Button variant="outline" onClick={() => setRoleOpen(true)}><BadgeCheck /> Change role</Button> : null}
             {isManager && !former && hub.me?.id !== p.id ? <Button variant="ghost" className="text-bad hover:bg-bad-soft hover:text-red-800" onClick={() => setLeaverOpen(true)}><UserMinus /> No longer at NFS</Button> : null}
             {isManager && former ? <Button variant="outline" onClick={() => hub.savePerson(p.id, { active: true, leftOn: undefined, leaving: undefined }, true, "reinstated")}>Reinstate</Button> : null}
             {hub.me?.id === p.id ? <Button variant="outline" asChild><Link href="/profile"><UserCog /> My profile</Link></Button> : null}
-            <Avatar name={personName(p)} src={p.photoUrl} tone="gold" className="size-14 text-base" />
+            <Avatar name={personName(p)} src={p.photoUrl} tone="gold" className="size-14 text-base max-sm:hidden" />
           </div>
         }
       />
@@ -139,13 +139,19 @@ export function PortfolioView({ p }: { p: Person }) {
         <div className="space-y-5">
           <Card>
             <CardHeader><div><CardTitle>Next 7 days</CardTitle></div></CardHeader>
-            <CardContent className="grid grid-cols-7 gap-1 text-center">
-              {week.map((d) => (
-                <div key={d}>
-                  <div className="mb-1 text-[10px] font-semibold text-muted">{formatDate(d, { weekday: "short" })}</div>
-                  {hub.absenceOn(p.id, d) ? <AbsenceChip a={hub.absenceOn(p.id, d)!} /> : <ShiftChip shift={roster.get(d) ?? "O"} />}
-                </div>
-              ))}
+            <CardContent>
+              <div className="grid grid-cols-7 gap-1 text-center">
+                {week.map((d) => {
+                  const lk = dayLook(roster.get(d), hub.absenceOn(p.id, d), roster.size > 0);
+                  return (
+                    <div key={d}>
+                      <div className={cn("mb-1 text-[10px] font-semibold", d === hub.today ? "text-brand-700" : "text-muted")}>{d === hub.today ? "Today" : formatDate(d, { weekday: "short" })}</div>
+                      <div className={cn("grid h-12 place-items-center rounded-lg border text-[11px] font-bold", lk.cell)} title={lk.title}>{lk.label}</div>
+                    </div>
+                  );
+                })}
+              </div>
+              <p className="mt-2 text-xs text-muted">{roster.size > 0 ? weekSummary(week.map((d) => dayLook(roster.get(d), hub.absenceOn(p.id, d)).kind)) : "Not on the shift roster."}</p>
             </CardContent>
           </Card>
           {canAbsence || mine.length ? (
@@ -218,13 +224,20 @@ function HistoryCalendar({ p }: { p: Person }) {
     const d = new Date(Date.UTC(y, mo - 1 + n, 1));
     setMonth(`${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, "0")}`);
   };
+  const rostered = shift.size > 0;
+  const counts = { work: 0, off: 0, away: 0 };
+  for (const d of cells) {
+    if (!d || d < hub.ds.windowStart || d > hub.ds.horizonEnd) continue;
+    counts[dayLook(shift.get(d), hub.absenceOn(p.id, d)).kind]++;
+  }
+  const monthSummary = !rostered ? "Not on the shift roster: managers and admin work office hours." : `${counts.work} working day${counts.work === 1 ? "" : "s"} · ${counts.off} off${counts.away ? ` · ${counts.away} away` : ""} this month`;
   const sel = worked.get(day) ?? [];
   const selAbs = hub.absenceOn(p.id, day);
   const selShift = shift.get(day);
   return (
     <Card className="mt-5">
-      <CardHeader>
-        <div><CardTitle>Day by day</CardTitle><CardDescription>Pick a day to see the shift, any absence and the flights worked</CardDescription></div>
+      <CardHeader className="flex-wrap">
+        <div className="min-w-48 flex-1"><CardTitle>Day by day</CardTitle><CardDescription>Pick a day to see the shift, any absence and the flights worked</CardDescription></div>
         <div className="flex items-center gap-1">
           <Button variant="outline" size="icon" disabled={month <= minMonth} onClick={() => shiftMonth(-1)} aria-label="Previous month"><ChevronLeft /></Button>
           <span className="min-w-32 text-center text-sm font-semibold">{formatDate(first, { month: "long", year: "numeric" })}</span>
@@ -234,12 +247,11 @@ function HistoryCalendar({ p }: { p: Person }) {
       <CardContent className="grid gap-5 @3xl/main:grid-cols-[1fr_320px]">
         <div>
           <div className="grid grid-cols-7 gap-1 text-center text-[10px] font-bold uppercase text-muted">{DOW.map((d) => <span key={d}>{d}</span>)}</div>
-          <div className="mt-1 grid grid-cols-7 gap-1">
+          <div className="mt-1.5 grid grid-cols-7 gap-1.5">
             {cells.map((d, i) => {
               if (!d) return <span key={`x${i}`} />;
               const out = d < hub.ds.windowStart || d > hub.ds.horizonEnd;
-              const ab = hub.absenceOn(p.id, d);
-              const s = shift.get(d);
+              const lk = dayLook(shift.get(d), hub.absenceOn(p.id, d), rostered);
               const n = worked.get(d)?.length ?? 0;
               const on = d === day;
               return (
@@ -248,22 +260,33 @@ function HistoryCalendar({ p }: { p: Person }) {
                   type="button"
                   disabled={out}
                   onClick={() => setDay(d)}
+                  title={`${formatDate(d, { weekday: "long", day: "numeric", month: "long" })}: ${lk.title}`}
+                  aria-pressed={on}
                   className={cn(
-                    "relative flex h-14 cursor-pointer flex-col items-center justify-center gap-0.5 rounded-lg border text-xs transition-colors disabled:cursor-default disabled:opacity-35",
-                    on ? "border-brand-500 bg-brand-50 ring-2 ring-brand-100" : "border-line hover:border-brand-400 hover:bg-brand-50/60",
-                    d === hub.today && !on && "border-brand-400",
+                    "relative flex h-14 cursor-pointer flex-col items-center justify-center gap-0.5 rounded-lg border text-xs transition-[box-shadow,background-color,border-color] disabled:cursor-default disabled:opacity-35",
+                    lk.cell,
+                    lk.kind === "off" ? "enabled:hover:border-brand-400 enabled:hover:bg-brand-50" : "enabled:hover:ring-2 enabled:hover:ring-brand-400",
+                    on && "ring-[3px] ring-gold-500 ring-offset-2 ring-offset-card enabled:hover:ring-gold-500",
                   )}
                 >
-                  <span className={cn("text-[11px] font-semibold tabular", d === hub.today ? "text-brand-700" : "text-ink-700")}>{Number(d.slice(8))}</span>
-                  <span className={cn("rounded px-1 text-[9.5px] font-bold", ab ? ABSENCE_TYPES[ab.type].tone : s === "E" ? "bg-brand-100 text-brand-800" : s === "L" ? "bg-ink-800 text-white" : s === "M" ? "bg-brand-50 text-brand-700" : s === "V" ? "bg-gold-100 text-gold-700" : "text-ink-300")}>
-                    {ab ? ABSENCE_TYPES[ab.type].short : s === "O" || !s ? "off" : s === "V" ? "VAC" : s}
-                  </span>
-                  {n ? <span className="absolute right-1 top-1 grid size-4 place-items-center rounded-full bg-gold-500 text-[9px] font-bold text-ink-900">{n}</span> : null}
+                  <span className={cn("text-[11px] tabular", d === hub.today ? "rounded-full bg-gold-500 px-1.5 font-bold text-ink-900" : "font-semibold opacity-90")}>{Number(d.slice(8))}</span>
+                  <span className="text-[10px] font-bold tracking-wide">{lk.label}</span>
+                  {n ? <span className="absolute -right-1.5 -top-1.5 z-10 grid size-[18px] place-items-center rounded-full bg-gold-500 text-[9.5px] font-bold text-ink-900 ring-2 ring-card" aria-label={`${n} flight${n > 1 ? "s" : ""} worked`}>{n}</span> : null}
                 </button>
               );
             })}
           </div>
-          <p className="mt-2 text-[11px] text-muted">Gold number: flights worked that day.</p>
+          <p className="mt-3 text-xs font-semibold text-ink-700">{monthSummary}</p>
+          <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1.5 text-[11px] text-muted">
+            <span className="flex items-center gap-1"><span className="size-3 rounded bg-brand-600" /> Early</span>
+            <span className="flex items-center gap-1"><span className="size-3 rounded bg-ink-800" /> Late</span>
+            <span className="flex items-center gap-1"><span className="size-3 rounded bg-brand-400" /> Mid</span>
+            <span className="flex items-center gap-1"><span className="size-3 rounded border border-dashed border-ink-300" /> Off</span>
+            <span className="flex items-center gap-1"><span className="size-3 rounded border border-gold-400 bg-gold-100" /> Vacation</span>
+            <span className="flex items-center gap-1"><span className="size-3 rounded bg-red-200" /> Sick or absent</span>
+            <span className="flex items-center gap-1"><span className="rounded-full bg-gold-500 px-1 text-[9px] font-bold text-ink-900">20</span> Today</span>
+            <span className="flex items-center gap-1"><span className="grid size-4 place-items-center rounded-full bg-gold-500 text-[9px] font-bold text-ink-900">2</span> Flights worked</span>
+          </div>
         </div>
         <div className="rounded-xl border border-line p-3">
           <p className="text-sm font-semibold">{formatDate(day, { weekday: "long", day: "numeric", month: "long" })}</p>
@@ -285,4 +308,24 @@ function HistoryCalendar({ p }: { p: Person }) {
       </CardContent>
     </Card>
   );
+}
+
+type DayKind = "work" | "off" | "away";
+/** One look for a day on someone's schedule: working days solid, days off outlined, time away tinted. */
+function dayLook(shift: string | undefined, ab: Absence | undefined | null, rostered = true): { kind: DayKind; cell: string; label: string; title: string } {
+  if (!rostered && !ab) return { kind: "off", cell: "border-line bg-card text-ink-400", label: "", title: "Not on the shift roster" };
+  if (ab) return { kind: "away", cell: `${ABSENCE_TYPES[ab.type].tone} border-transparent`, label: ABSENCE_TYPES[ab.type].short, title: ABSENCE_TYPES[ab.type].label };
+  switch (shift) {
+    case "E": return { kind: "work", cell: "bg-brand-600 text-white border-brand-600", label: "EARLY", title: "Early shift" };
+    case "L": return { kind: "work", cell: "bg-ink-800 text-white border-ink-800", label: "LATE", title: "Late shift" };
+    case "M": return { kind: "work", cell: "bg-brand-400 text-white border-brand-400", label: "MID", title: "Mid shift" };
+    case "V": return { kind: "away", cell: "bg-gold-100 text-gold-700 border-gold-400", label: "VAC", title: "Vacation" };
+    default: return { kind: "off", cell: "border-dashed border-ink-300 bg-card text-ink-400", label: "OFF", title: "Day off" };
+  }
+}
+function weekSummary(kinds: DayKind[]) {
+  const w = kinds.filter((k) => k === "work").length;
+  const o = kinds.filter((k) => k === "off").length;
+  const a = kinds.length - w - o;
+  return `${w} working · ${o} off${a ? ` · ${a} away` : ""}`;
 }
