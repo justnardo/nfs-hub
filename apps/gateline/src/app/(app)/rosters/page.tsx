@@ -447,8 +447,8 @@ function Rosters() {
       {absentCell && hub.people.get(absentCell.personId) ? <AbsenceDialog person={hub.people.get(absentCell.personId)!} date={absentCell.date} absence={hub.absenceOn(absentCell.personId, absentCell.date)} onClose={() => setAbsentCell(null)} /> : null}
       {optOpen ? <OptimiseDialog team={team} members={members} ws={ws} onClose={() => setOptOpen(false)} /> : null}
       {teamOpen && airline ? <TeamMembersDialog airline={airline} onClose={() => setTeamOpen(false)} /> : null}
-      {sheetOpen && airline ? <RosterSheetDialog airline={airline} members={members} initialWeek={ws} onClose={() => setSheetOpen(false)} /> : null}
-      {linesOpen && airline ? <LinesDialog airline={airline} members={members} week={hub.today} onClose={() => setLinesOpen(false)} /> : null}
+      {sheetOpen && airline ? <RosterSheetDialog airline={airline} initialWeek={ws} onClose={() => setSheetOpen(false)} /> : null}
+      {linesOpen && airline ? <LinesDialog airline={airline} week={hub.today} onClose={() => setLinesOpen(false)} /> : null}
       {createOpen ? <CreateRosterDialog defaultTeam={team} defaultStart={unrostered ? ws : undefined} onClose={() => setCreateOpen(false)} /> : null}
     </>
   );

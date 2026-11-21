@@ -3,7 +3,7 @@ import type {
   Person, Role, RosterEntry, ShiftCode, TeamMember, Terminal, TrainingRecord,
 } from "@nfs/db";
 import { AIRLINES, ROUTES, demoCharters, type Charter, type RouteTemplate } from "./airlines";
-import { entriesFromLines, fairnessHistory, optimiseWeek, resolveLines, resolveRules, weekPatterns, type RuleSettings } from "@nfs/rules";
+import { entriesFromLines, lineSupervisors, fairnessHistory, optimiseWeek, resolveLines, resolveRules, weekPatterns, type RuleSettings } from "@nfs/rules";
 import { FIRST_NAMES, LAST_NAMES } from "./names";
 import { rng } from "./prng";
 import { addDays, dayOfWeek, fromMinutes, rangeDays, toMinutes, weekStart } from "@nfs/db";
@@ -261,9 +261,14 @@ export function generateDataset(today: string, nowMinutes: number, config: Datas
   const lineWeeks: string[] = [];
   for (let ws = windowStart; ws <= horizonDays[horizonDays.length - 1]; ws = addDays(ws, 7)) lineWeeks.push(ws);
   const lineTeams = new Set<string>();
+  const onLines = new Set<string>();
   for (const airline of airlines) {
     if (!airline.lines?.length) continue;
-    const team = people.filter((p) => (p.role === "agent" || p.role === "lead") && p.coreAirline === airline.code && (p.active !== false || p.leftOn));
+    const team = [
+      ...people.filter((p) => (p.role === "agent" || p.role === "lead") && p.coreAirline === airline.code && (p.active !== false || p.leftOn)),
+      ...lineSupervisors(airline, people, airlines),
+    ];
+    for (const p of team) onLines.add(p.id);
     for (const e of entriesFromLines(airline, team, lineWeeks)) {
       roster.push(e);
       shiftOf.set(`${e.personId}|${e.date}`, e.shift);
@@ -287,7 +292,7 @@ export function generateDataset(today: string, nowMinutes: number, config: Datas
     rosterTeam(active.filter((p) => p.role === "agent" && !p.coreAirline), ws, () => 1, "pool");
     rosterTeam(active.filter((p) => p.role === "lead" && !p.coreAirline), ws, () => 1, "pool-leads");
     for (const term of ["US", "INTL"] as Terminal[]) {
-      rosterTeam(active.filter((p) => p.role === "supervisor" && p.homeTerminal === term), ws, () => 1, `sup-${term}`);
+      rosterTeam(active.filter((p) => p.role === "supervisor" && p.homeTerminal === term && !onLines.has(p.id)), ws, () => 1, `sup-${term}`);
     }
   }
 

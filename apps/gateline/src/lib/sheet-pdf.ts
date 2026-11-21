@@ -43,7 +43,7 @@ async function loadImage(src: string): Promise<{ data: string; w: number; h: num
   }
 }
 
-export async function downloadRosterSheet(spec: { airlineName: string; airlineLogo?: string | null; blocks: SheetBlock[]; period: string; noticeHours: number; filename: string; generatedBy?: string }) {
+export async function downloadRosterSheet(spec: { airlineName: string; sheetLabel: string; airlineLogo?: string | null; blocks: SheetBlock[]; period: string; noticeHours: number; filename: string; generatedBy?: string }) {
   const [{ jsPDF }, { default: autoTable }] = await Promise.all([import("jspdf"), import("jspdf-autotable")]);
   const doc = new jsPDF({ orientation: "landscape", unit: "pt", format: "letter" });
   const W = doc.internal.pageSize.getWidth();
@@ -73,7 +73,7 @@ export async function downloadRosterSheet(spec: { airlineName: string; airlineLo
 
   let y = 74;
   spec.blocks.forEach((b) => {
-    const head = [["", ...DAYS, spec.airlineName.split(" ")[0].toUpperCase(), "EMP#", ...b.weekStarts.map(weekHead)]];
+    const head = [["", ...DAYS, spec.sheetLabel, "EMP#", ...b.weekStarts.map(weekHead)]];
     const body = b.rows.map((r) => [r.label, ...r.days.map(cellTime), sheetName(r.person.firstName, r.person.lastName), empNo(r.person.staffNo), ...r.weeks]);
     autoTable(doc, {
       startY: y,

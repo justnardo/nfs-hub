@@ -25,7 +25,23 @@ const BREEZE_LINES: RosterLine[] = [
   { label: "E", from: "@this-week", days: ["14:00-22:00", "14:00-22:00", O, O, "07:00-15:00", "06:00-14:00", "14:00-22:00"] },
   { label: "F", from: "@this-week", days: ["07:00-15:00", "06:00-14:00", O, O, "14:00-22:00", "14:00-22:00", "09:00-17:00"] },
   { label: "G", from: "@this-week", days: ["14:00-22:00", "14:00-22:00", O, O, "07:00-15:00", "06:00-14:00", "14:00-22:00"] },
-  { label: "H", days: ["07:00-15:00", "06:00-14:00", O, O, "07:00-15:00", "06:00-14:00", "09:00-17:00"] },
+  // The leads' own section at the foot of the roster
+  { label: "A", group: "lead", days: ["07:00-15:00", "06:00-14:00", O, O, "07:00-15:00", "06:00-14:00", "09:00-17:00"] },
+  { label: "B", group: "lead", days: ["14:00-22:00", "14:00-22:00", O, O, "07:00-15:00", "06:00-14:00", "14:00-22:00"] },
+];
+
+/** Southwest's lines, modelled on NFS's issued roster: agents A–F, a supervisor line, and two lead lines. */
+const NINE = "09:00-17:00";
+const SOUTHWEST_LINES: RosterLine[] = [
+  { label: "A", days: [NINE, NINE, NINE, "08:00-16:00", O, O, NINE] },
+  { label: "B", days: [NINE, NINE, NINE, NINE, O, O, NINE] },
+  { label: "C", days: [NINE, O, O, NINE, NINE, NINE, NINE] },
+  { label: "D", days: [O, NINE, NINE, NINE, NINE, NINE, O] },
+  { label: "E", days: [O, O, NINE, NINE, NINE, NINE, NINE] },
+  { label: "F", days: [NINE, NINE, O, O, NINE, NINE, NINE] },
+  { label: "A", group: "supervisor", days: [NINE, NINE, NINE, NINE, NINE, O, O] },
+  { label: "A", group: "lead", days: [NINE, NINE, O, O, NINE, NINE, NINE] },
+  { label: "B", group: "lead", days: [NINE, NINE, NINE, NINE, O, O, NINE] },
 ];
 
 export const AIRLINES: Airline[] = [
@@ -107,6 +123,10 @@ export const AIRLINES: Airline[] = [
     stationManager: { name: "J. Okafor", phone: "+1 242 555 0125", email: "nas.station@example-southwest.com", preferences: "Open seating: boarding groups called strictly in order. Two bags fly free, so expect heavy counter volume." },
     requiredTraining: ["Southwest Customer Service", "Preclearance Procedures", "Jet Bridge Operation"],
     usesJetBridge: true,
+    // Southwest is on lines too: one 0900–1700 shift, days off staggered so all seven days are covered,
+    // with the supervisor and the leads on lines of their own (see SOUTHWEST_LINES).
+    lines: SOUTHWEST_LINES,
+    sheetLabel: "WN PSA",
   },
   {
     code: "CM",
@@ -210,7 +230,7 @@ export const ROUTES: RouteTemplate[] = [
   { airline: "JY", flightNo: "JY 431", dest: "PLS", destName: "Providenciales", std: "09:05", turnMins: 50, aircraft: "ERJ-145", gate: "D47", seats: 50 },
   { airline: "JY", flightNo: "JY 437", dest: "PLS", destName: "Providenciales", std: "16:50", turnMins: 50, aircraft: "ERJ-145", gate: "D47", seats: 50, days: [1, 3, 5, 0] },
   // Southwest — US Departures Terminal
-  { airline: "WN", flightNo: "WN 1882", dest: "FLL", destName: "Fort Lauderdale", std: "11:20", turnMins: 50, aircraft: "B737-800", gate: "C32", seats: 175 },
+  { airline: "WN", flightNo: "WN 1882", dest: "FLL", destName: "Fort Lauderdale", std: "12:10", turnMins: 50, aircraft: "B737-800", gate: "C32", seats: 175 },
   { airline: "WN", flightNo: "WN 2471", dest: "BWI", destName: "Baltimore", std: "14:05", turnMins: 55, aircraft: "B737 MAX 8", gate: "C32", seats: 175, days: [0, 4, 5, 6] },
   // Breeze — US Departures Terminal
   { airline: "MX", flightNo: "MX 811", dest: "CHS", destName: "Charleston", std: "13:10", turnMins: 50, aircraft: "A220-300", gate: "C30", seats: 137, days: [1, 4, 5, 0] },

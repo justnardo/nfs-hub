@@ -186,7 +186,7 @@ export default function SharedRosterPage() {
         <CardContent className="px-2 sm:px-5">
           {person ? null : <div className="px-2">{weekTabs}</div>}
           <RosterGrid members={members} days={days} shiftOf={(pid, d) => ctx.shift(pid, d)} timeOf={(pid, d) => ctx.time(pid, d)} today={hub.today} highlightId={person?.id} changed={changed} absenceOf={hub.absenceOn} privateAbsence />
-          {sheetOpen && airline ? <RosterSheetDialog airline={airline} members={members} initialWeek={ws} onClose={() => setSheetOpen(false)} /> : null}
+          {sheetOpen && airline ? <RosterSheetDialog airline={airline} initialWeek={ws} onClose={() => setSheetOpen(false)} /> : null}
           <p className="mt-3 px-2 text-[11px] text-muted">E Early {SHIFT_TIMES.E.start}–{SHIFT_TIMES.E.end} · M Mid {SHIFT_TIMES.M.start}–{SHIFT_TIMES.M.end} · L Late {SHIFT_TIMES.L.start}–{SHIFT_TIMES.L.end} · Gold dot: changed since publishing. Read-only — speak to your supervisor about swaps.</p>
         </CardContent>
       </Card>

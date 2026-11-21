@@ -45,6 +45,8 @@ export interface Airline {
   lineAssign?: Record<string, string>;
   /** Week-by-week changes to the standing line (week start → personId → line label). */
   lineWeeks?: Record<string, Record<string, string>>;
+  /** Heading over the names on the printed roster, e.g. "WN PSA". Defaults to the airline's name. */
+  sheetLabel?: string;
   /** Private link the station manager uses to send feedback without signing in. */
   feedbackToken?: string | null;
 }
@@ -256,6 +258,8 @@ export interface RosterEntry {
   time?: string;
 }
 
+export type LineGroup = "lead" | "supervisor";
+
 /** One line of a line roster: a label (A, B, C…) and a week of shift times, Sunday first; null is a day off. */
 export interface RosterLine {
   label: string;
@@ -264,6 +268,8 @@ export interface RosterLine {
   /** The line's pattern applies from this week start (inclusive), until `to` if set. Lets a line change mid-month. */
   from?: string;
   to?: string;
+  /** Leads and supervisors can have their own lines, lettered from A again in their own section of the printed roster. Unset: agents' lines. */
+  group?: LineGroup;
 }
 
 export interface FeedbackItem {

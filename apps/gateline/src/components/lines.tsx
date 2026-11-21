@@ -2,13 +2,21 @@
 import * as React from "react";
 import { ChevronLeft, ChevronRight, Copy, Download, Loader2, Plus, Rows3, Trash2 } from "lucide-react";
 import { Badge, Button, Dialog, DialogContent, Input, Select, cn } from "@nfs/ui";
-import { addDays, formatDate, weekStart, type Airline, type Person, type RosterEntry, type RosterLine } from "@nfs/db";
-import { entriesFromLines, lineAt, lineLabels, normaliseSpan, rosterSheet, standingLines, type SheetBlock } from "@nfs/rules";
+import { addDays, formatDate, weekStart, type Airline, type LineGroup, type Person, type RosterEntry, type RosterLine } from "@nfs/db";
+import { entriesFromLines, lineAt, lineGroup, lineLabels, lineMembers, normaliseSpan, rosterSheet, standingLines, type SheetBlock } from "@nfs/rules";
 import { useHub } from "@/lib/store";
 import { cellTime, downloadRosterSheet, empNo, sheetName, weekHead } from "@/lib/sheet-pdf";
 import { AirlineChip } from "./ops";
 
 const DAYS = ["SUN", "MON", "TUE", "WED", "THU", "FRI", "SAT"];
+const GROUPS: { key: LineGroup | undefined; label: string }[] = [{ key: undefined, label: "Agents" }, { key: "supervisor", label: "Supervisors" }, { key: "lead", label: "Leads" }];
+export const sheetHeading = (a: Airline) => a.sheetLabel || a.name.split(" ")[0].toUpperCase();
+
+/** Everyone on an airline's printed roster: agents and leads, plus supervisors on its lines. */
+export function useLineMembers(airline: Airline | undefined): Person[] {
+  const hub = useHub();
+  return React.useMemo(() => (airline ? lineMembers(airline, hub.ds.people, hub.ds.airlines) : []), [airline, hub.ds.people, hub.ds.airlines]);
+}
 
 /** Sundays of a month: the weeks a monthly roster sheet covers. */
 function monthWeeks(month: string): string[] {
@@ -43,7 +51,7 @@ export function SheetTable({ airline, block }: { airline: Airline; block: SheetB
           <tr className="bg-brand-600 text-[11px] font-bold text-white">
             <th className="w-8 border border-brand-700 px-1 py-1.5" />
             {DAYS.map((d) => <th key={d} className="border border-brand-700 px-1 py-1.5">{d}</th>)}
-            <th className="border border-brand-700 px-2 py-1.5 text-left">{airline.name.split(" ")[0].toUpperCase()}</th>
+            <th className="border border-brand-700 px-2 py-1.5 text-left">{sheetHeading(airline)}</th>
             <th className="border border-brand-700 px-1 py-1.5">EMP#</th>
             {block.weekStarts.map((w) => <th key={w} className="border border-brand-700 px-1 py-1.5">{weekHead(w)}</th>)}
           </tr>
@@ -65,8 +73,9 @@ export function SheetTable({ airline, block }: { airline: Airline; block: SheetB
 }
 
 /** Preview and PDF of the roster sheet, in the layout agents already get. */
-export function RosterSheetDialog({ airline, members, initialWeek, onClose }: { airline: Airline; members: Person[]; initialWeek: string; onClose: () => void }) {
+export function RosterSheetDialog({ airline, initialWeek, onClose }: { airline: Airline; members?: Person[]; initialWeek: string; onClose: () => void }) {
   const hub = useHub();
+  const members = useLineMembers(airline);
   const [month, setMonth] = React.useState(initialWeek.slice(0, 7));
   const [busy, setBusy] = React.useState(false);
   const minMonth = hub.ds.windowStart.slice(0, 7);
@@ -102,7 +111,7 @@ export function RosterSheetDialog({ airline, members, initialWeek, onClose }: { 
               onClick={async () => {
                 setBusy(true);
                 try {
-                  await downloadRosterSheet({ airlineName: airline.name, airlineLogo: airline.logoUrl, blocks, period, noticeHours: notice, filename: `NFS-${airline.code}-roster-${month}.pdf`, generatedBy: hub.session?.name });
+                  await downloadRosterSheet({ airlineName: airline.name, sheetLabel: sheetHeading(airline), airlineLogo: airline.logoUrl, blocks, period, noticeHours: notice, filename: `NFS-${airline.code}-roster-${month}.pdf`, generatedBy: hub.session?.name });
                 } finally {
                   setBusy(false);
                 }
@@ -135,15 +144,22 @@ export function RosterSheetDialog({ airline, members, initialWeek, onClose }: { 
 const blankWeek = (): (string | null)[] => [null, null, null, null, null, null, null];
 
 /** Set up and edit an airline's lines, and who is on which line each week. */
-export function LinesDialog({ airline, members, week, onClose }: { airline: Airline; members: Person[]; week: string; onClose: () => void }) {
+export function LinesDialog({ airline, week, onClose }: { airline: Airline; members?: Person[]; week: string; onClose: () => void }) {
   const hub = useHub();
+  const teamMembers = useLineMembers(airline);
+  const terminalSups = hub.ds.people.filter((p) => p.role === "supervisor" && p.active !== false && p.homeTerminal === airline.terminal);
   const [lines, setLines] = React.useState<RosterLine[]>(() => airline.lines?.map((l) => ({ ...l, days: [...l.days] })) ?? []);
-  const [assign, setAssign] = React.useState<Record<string, string>>(() => Object.fromEntries(standingLines(airline, members)));
+  const [assign, setAssign] = React.useState<Record<string, string>>(() => Object.fromEntries(standingLines(airline, teamMembers)));
+  const [label, setLabel] = React.useState(airline.sheetLabel ?? "");
   const [weeksMap, setWeeksMap] = React.useState<Record<string, Record<string, string>>>(() => structuredClone(airline.lineWeeks ?? {}));
   const [tab, setTab] = React.useState<"lines" | "people">(airline.lines?.length ? "people" : "lines");
   const [bad, setBad] = React.useState<string | null>(null);
   const weeks = [0, 1, 2, 3, 4].map((n) => addDays(weekStart(week), n * 7));
   const labels = lineLabels(lines);
+  // Supervisors shown: those on the lines now (or about to be), when there are supervisor lines
+  const hasSupLines = lines.some((l) => l.group === "supervisor");
+  const supIds = Object.keys(assign).filter((id) => terminalSups.some((p) => p.id === id));
+  const members = [...teamMembers.filter((p) => p.role !== "supervisor"), ...(hasSupLines ? terminalSups.filter((p) => supIds.includes(p.id) || teamMembers.some((m) => m.id === p.id)) : [])];
 
   // Start from the roster as it stands this week: each distinct week becomes a line
   const derive = () => {
@@ -152,10 +168,12 @@ export function LinesDialog({ airline, members, week, onClose }: { airline: Airl
     const seen = new Map<string, RosterLine>();
     const a: Record<string, string> = {};
     for (const b of blocks) for (const r of b.rows) {
-      if (!seen.has(r.label)) seen.set(r.label, { label: r.label, days: r.days.map((t) => (t ? normaliseSpan(t) : null)) });
+      const group = r.person.role === "lead" ? ("lead" as const) : undefined;
+      const k = `${group ?? ""}${r.label}`;
+      if (!seen.has(k)) seen.set(k, { label: r.label, group, days: r.days.map((t) => (t ? normaliseSpan(t) : null)) });
       a[r.person.id] = r.label;
     }
-    setLines([...seen.values()].sort((x, y) => x.label.localeCompare(y.label)));
+    setLines([...seen.values()].sort((x, y) => (x.group ?? "").localeCompare(y.group ?? "") || x.label.localeCompare(y.label)));
     setAssign(a);
   };
 
@@ -174,9 +192,11 @@ export function LinesDialog({ airline, members, week, onClose }: { airline: Airl
     setBad(null);
     setLines(next);
   };
-  const addLine = () => {
-    const nextLabel = String.fromCharCode(65 + labels.length);
-    setLines([...lines, { label: nextLabel, days: lines.length ? [...lines[lines.length - 1].days] : blankWeek() }]);
+  const addLine = (group?: LineGroup) => {
+    const inGroup = lines.filter((l) => (l.group ?? undefined) === group);
+    const nextLabel = String.fromCharCode(65 + lineLabels(lines, group).length);
+    const copy = inGroup.length ? [...inGroup[inGroup.length - 1].days] : group ? ["09:00-17:00", "09:00-17:00", "09:00-17:00", "09:00-17:00", "09:00-17:00", null, null] : blankWeek();
+    setLines([...lines, { label: nextLabel, ...(group ? { group } : {}), days: copy }]);
   };
   // A new version of a line from a given week: the old one stops the day before
   const splitFrom = (i: number, from: string) => {
@@ -187,7 +207,7 @@ export function LinesDialog({ airline, members, week, onClose }: { airline: Airl
     setLines(next);
   };
   const save = () => {
-    hub.saveAirline({ ...airline, lines, lineAssign: assign, lineWeeks: weeksMap });
+    hub.saveAirline({ ...airline, lines, lineAssign: assign, lineWeeks: weeksMap, sheetLabel: label.trim() || undefined });
     onClose();
   };
   const pick = (pid: string, ws: string, v: string) => {
@@ -229,55 +249,73 @@ export function LinesDialog({ airline, members, week, onClose }: { airline: Airl
                 <p className="mt-1 text-xs text-muted">Start from this week&apos;s roster (each distinct week becomes a line), or add lines by hand.</p>
                 <div className="mt-3 flex justify-center gap-2">
                   <Button variant="outline" onClick={derive}><Copy /> Start from this week</Button>
-                  <Button onClick={addLine}><Plus /> Add a line</Button>
+                  <Button onClick={() => addLine()}><Plus /> Add a line</Button>
                 </div>
               </div>
             ) : (
-              <div className="overflow-x-auto">
-                <table className="w-full min-w-[820px] border-separate border-spacing-y-1 text-center text-xs">
-                  <thead>
-                    <tr className="text-[10px] font-bold uppercase text-muted">
-                      <th className="w-10">Line</th>
-                      {DAYS.map((d) => <th key={d}>{d}</th>)}
-                      <th className="text-left">Runs</th>
-                      <th />
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {lines.map((l, i) => (
-                      <tr key={`${l.label}-${l.from ?? ""}-${i}`}>
-                        <td><span className="grid size-8 place-items-center rounded-lg bg-ink-800 font-display text-sm font-bold text-white">{l.label}</span></td>
-                        {l.days.map((t, d) => (
-                          <td key={d} className="px-0.5">
-                            <Input
-                              defaultValue={t ? t.replace(/:/g, "") : "OFF"}
-                              onBlur={(e) => setDay(i, d, e.target.value)}
-                              aria-label={`Line ${l.label} ${DAYS[d]}`}
-                              className={cn("h-9 px-1 text-center text-xs tabular-nums", !t && "bg-surface text-ink-400")}
-                            />
-                          </td>
-                        ))}
-                        <td className="whitespace-nowrap px-2 text-left text-[11px] text-muted">
-                          {l.from || l.to ? `${l.from ? `from ${formatDate(l.from, { day: "numeric", month: "short" })}` : ""}${l.from && l.to ? " " : ""}${l.to ? `to ${formatDate(l.to, { day: "numeric", month: "short" })}` : ""}` : "every week"}
-                          <span className="block">{7 - off(l)} shifts · {(7 - off(l)) * 8}h</span>
-                        </td>
-                        <td className="whitespace-nowrap">
-                          {!l.to ? (
-                            <Select aria-label={`Change line ${l.label} from a week`} value="" onChange={(e) => e.target.value && splitFrom(i, e.target.value)} className="h-8 w-auto text-[11px]">
-                              <option value="">Change from…</option>
-                              {weeks.slice(1).filter((w) => !l.from || w > l.from).map((w) => <option key={w} value={w}>{formatDate(w, { day: "numeric", month: "short" })}</option>)}
-                            </Select>
-                          ) : null}
-                          <Button variant="ghost" size="icon" aria-label={`Remove line ${l.label}`} onClick={() => setLines(lines.filter((_, j) => j !== i))}><Trash2 className="size-4" /></Button>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-                <Button variant="outline" size="sm" className="mt-2" onClick={addLine}><Plus /> Add a line</Button>
+              <div className="space-y-5">
+                {GROUPS.map((g) => {
+                  const idxs = lines.map((l, i) => ({ l, i })).filter(({ l }) => (l.group ?? undefined) === g.key);
+                  if (!idxs.length && g.key) return (
+                    <Button key={g.label} variant="outline" size="sm" onClick={() => addLine(g.key)}><Plus /> Add {g.key === "lead" ? "lead" : "supervisor"} lines</Button>
+                  );
+                  if (!idxs.length) return null;
+                  return (
+                    <div key={g.label}>
+                      <p className="mb-1 text-xs font-bold uppercase tracking-wide text-brand-700">{g.label}</p>
+                      <div className="overflow-x-auto">
+                        <table className="w-full min-w-[820px] border-separate border-spacing-y-1 text-center text-xs">
+                          <thead>
+                            <tr className="text-[10px] font-bold uppercase text-muted">
+                              <th className="w-10">Line</th>
+                              {DAYS.map((d) => <th key={d}>{d}</th>)}
+                              <th className="text-left">Runs</th>
+                              <th />
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {idxs.map(({ l, i }) => (
+                              <tr key={`${l.group ?? ""}-${l.label}-${l.from ?? ""}-${i}`}>
+                                <td><span className={cn("grid size-8 place-items-center rounded-lg font-display text-sm font-bold text-white", g.key === "lead" ? "bg-brand-600" : g.key === "supervisor" ? "bg-gold-500 text-ink-900" : "bg-ink-800")}>{l.label}</span></td>
+                                {l.days.map((t, d) => (
+                                  <td key={d} className="px-0.5">
+                                    <Input
+                                      defaultValue={t ? t.replace(/:/g, "") : "OFF"}
+                                      onBlur={(e) => setDay(i, d, e.target.value)}
+                                      aria-label={`${g.label} line ${l.label} ${DAYS[d]}`}
+                                      className={cn("h-9 px-1 text-center text-xs tabular-nums", !t && "bg-surface text-ink-400")}
+                                    />
+                                  </td>
+                                ))}
+                                <td className="whitespace-nowrap px-2 text-left text-[11px] text-muted">
+                                  {l.from || l.to ? `${l.from ? `from ${formatDate(l.from, { day: "numeric", month: "short" })}` : ""}${l.from && l.to ? " " : ""}${l.to ? `to ${formatDate(l.to, { day: "numeric", month: "short" })}` : ""}` : "every week"}
+                                  <span className="block">{7 - off(l)} shifts · {(7 - off(l)) * 8}h</span>
+                                </td>
+                                <td className="whitespace-nowrap">
+                                  {!l.to ? (
+                                    <Select aria-label={`Change line ${l.label} from a week`} value="" onChange={(e) => e.target.value && splitFrom(i, e.target.value)} className="h-8 w-auto text-[11px]">
+                                      <option value="">Change from…</option>
+                                      {weeks.slice(1).filter((w) => !l.from || w > l.from).map((w) => <option key={w} value={w}>{formatDate(w, { day: "numeric", month: "short" })}</option>)}
+                                    </Select>
+                                  ) : null}
+                                  <Button variant="ghost" size="icon" aria-label={`Remove line ${l.label}`} onClick={() => setLines(lines.filter((_, j) => j !== i))}><Trash2 className="size-4" /></Button>
+                                </td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                      <Button variant="outline" size="sm" className="mt-1" onClick={() => addLine(g.key)}><Plus /> Add {g.key === "lead" ? "a lead" : g.key === "supervisor" ? "a supervisor" : "an agent"} line</Button>
+                    </div>
+                  );
+                })}
               </div>
             )}
-            {bad ? <p className="mt-2 text-xs font-semibold text-bad">{bad}</p> : <p className="mt-2 text-[11px] text-muted">Type times like 0700-1500, or OFF. To change a line part-way through the month, use “Change from…” and edit the new version.</p>}
+            <div className="mt-4 flex flex-wrap items-center gap-2 border-t border-line pt-3">
+              <span className="text-xs font-semibold">Heading over names on the printed roster</span>
+              <Input value={label} onChange={(e) => setLabel(e.target.value)} placeholder={airline.name.split(" ")[0].toUpperCase()} className="h-9 w-40" />
+            </div>
+            {bad ? <p className="mt-2 text-xs font-semibold text-bad">{bad}</p> : <p className="mt-2 text-[11px] text-muted">Type times like 0700-1500, or OFF. Leads and supervisors can have lines of their own, lettered from A, as on the printed roster. To change a line part-way through the month, use “Change from…”.</p>}
           </>
         ) : (
           <div className="overflow-x-auto">
@@ -287,36 +325,55 @@ export function LinesDialog({ airline, members, week, onClose }: { airline: Airl
                   <th className="text-left">Staff</th>
                   <th>Usual line</th>
                   {weeks.map((w) => <th key={w}>{weekHead(w)}</th>)}
+                  <th />
                 </tr>
               </thead>
               <tbody>
-                {members.map((p) => (
-                  <tr key={p.id}>
-                    <td className="py-1 pr-3">
-                      <p className="font-semibold">{p.firstName} {p.lastName}</p>
-                      <p className="text-[11px] text-muted">{p.role === "lead" ? "Lead" : "Agent"} · {empNo(p.staffNo)}</p>
-                    </td>
-                    <td className="px-1 text-center">
-                      <Select value={assign[p.id] ?? ""} onChange={(e) => setAssign({ ...assign, [p.id]: e.target.value })} className="h-9 w-20 font-bold" aria-label={`${p.firstName}'s usual line`}>
-                        {labels.map((l) => <option key={l}>{l}</option>)}
-                      </Select>
-                    </td>
-                    {weeks.map((w) => {
-                      const v = weeksMap[w]?.[p.id] ?? assign[p.id] ?? "";
-                      const moved = !!weeksMap[w]?.[p.id] && weeksMap[w][p.id] !== assign[p.id];
-                      const line = v ? lineAt(lines, v, w) : undefined;
-                      return (
-                        <td key={w} className="px-1 text-center">
-                          <Select value={v} onChange={(e) => pick(p.id, w, e.target.value)} title={line ? line.days.map((t, i) => `${DAYS[i]} ${t ?? "OFF"}`).join(" · ") : ""} className={cn("h-9 w-20", moved && "border-gold-400 bg-gold-100 font-bold")} aria-label={`${p.firstName} week of ${weekHead(w)}`}>
-                            {labels.map((l) => <option key={l}>{l}</option>)}
-                          </Select>
-                        </td>
-                      );
-                    })}
-                  </tr>
-                ))}
+                {members.map((p) => {
+                  const g = lineGroup(lines, p);
+                  const opts = lineLabels(lines, g);
+                  return (
+                    <tr key={p.id}>
+                      <td className="py-1 pr-3">
+                        <p className="font-semibold">{p.firstName} {p.lastName}</p>
+                        <p className="text-[11px] text-muted">{p.role === "lead" ? "Lead" : p.role === "supervisor" ? "Supervisor" : "Agent"} · {empNo(p.staffNo)}{g ? ` · ${g} lines` : ""}</p>
+                      </td>
+                      <td className="px-1 text-center">
+                        <Select value={assign[p.id] ?? ""} onChange={(e) => setAssign({ ...assign, [p.id]: e.target.value })} className="h-9 w-20 font-bold" aria-label={`${p.firstName}'s usual line`}>
+                          {opts.map((l) => <option key={l}>{l}</option>)}
+                        </Select>
+                      </td>
+                      {weeks.map((w) => {
+                        const v = weeksMap[w]?.[p.id] ?? assign[p.id] ?? "";
+                        const moved = !!weeksMap[w]?.[p.id] && weeksMap[w][p.id] !== assign[p.id];
+                        const line = v ? lineAt(lines, v, w, g) : undefined;
+                        return (
+                          <td key={w} className="px-1 text-center">
+                            <Select value={v} onChange={(e) => pick(p.id, w, e.target.value)} title={line ? line.days.map((t, i) => `${DAYS[i]} ${t ?? "OFF"}`).join(" · ") : ""} className={cn("h-9 w-20", moved && "border-gold-400 bg-gold-100 font-bold")} aria-label={`${p.firstName} week of ${weekHead(w)}`}>
+                              {opts.map((l) => <option key={l}>{l}</option>)}
+                            </Select>
+                          </td>
+                        );
+                      })}
+                      <td>
+                        {p.role === "supervisor" ? (
+                          <Button variant="ghost" size="icon" aria-label={`Take ${p.firstName} off the lines`} onClick={() => { const next = { ...assign }; delete next[p.id]; setAssign(next); }}><Trash2 className="size-4" /></Button>
+                        ) : null}
+                      </td>
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
+            {hasSupLines ? (
+              <div className="mt-3 flex flex-wrap items-center gap-2">
+                <span className="text-xs font-semibold">Put a supervisor on these lines</span>
+                <Select value="" onChange={(e) => e.target.value && setAssign({ ...assign, [e.target.value]: lineLabels(lines, "supervisor")[0] })} className="h-9 w-auto">
+                  <option value="">Choose…</option>
+                  {terminalSups.filter((p) => !members.some((m) => m.id === p.id)).map((p) => <option key={p.id} value={p.id}>{p.firstName} {p.lastName}</option>)}
+                </Select>
+              </div>
+            ) : null}
             <p className="mt-2 flex items-center gap-1.5 text-[11px] text-muted"><Badge tone="warn">Gold</Badge> a week someone is moved off their usual line.</p>
           </div>
         )}

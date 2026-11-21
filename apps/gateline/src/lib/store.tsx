@@ -247,7 +247,7 @@ export function HubProvider({ children }: { children: React.ReactNode }) {
   const airlines = React.useMemo<Airline[]>(() => {
     const edits = state.airline;
     // An edit saved before an airline had lines keeps the seed's lines
-    const base = AIRLINES.map((a) => (edits[a.code] && !isRemoved(edits[a.code]) ? { ...(edits[a.code] as Airline), lines: (edits[a.code] as Airline).lines ?? a.lines } : a)).filter((a) => !isRemoved(edits[a.code]));
+    const base = AIRLINES.map((a) => (edits[a.code] && !isRemoved(edits[a.code]) ? { ...(edits[a.code] as Airline), lines: (edits[a.code] as Airline).lines ?? a.lines, sheetLabel: (edits[a.code] as Airline).sheetLabel ?? a.sheetLabel } : a)).filter((a) => !isRemoved(edits[a.code]));
     const added = Object.entries(edits).filter(([code, v]) => !isRemoved(v) && !AIRLINES.some((a) => a.code === code)).map(([, v]) => v as Airline);
     return [...base, ...added];
   }, [state.airline]);

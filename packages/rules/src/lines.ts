@@ -2,7 +2,7 @@
  * Line rosters, the way NFS issues them to agents: an airline has lines (A, B, C…), each a fixed
  * Sunday-to-Saturday week of shift times or days off, and every agent is put on a line each week.
  */
-import { addDays, weekStart as weekStartOf, type Airline, type Person, type RosterEntry, type RosterLine, type ShiftCode } from "@nfs/db";
+import { addDays, weekStart as weekStartOf, type Airline, type LineGroup, type Person, type RosterEntry, type RosterLine, type ShiftCode } from "@nfs/db";
 import { bandOf, isWork, normaliseSpan, parseSpan, SHIFT_TIMES } from "./shifts";
 
 /** Seed lines may use "@this-week" / "@this-week-1" so the demo always shows a mid-month change; resolve them. */
@@ -12,14 +12,44 @@ export function resolveLines(lines: RosterLine[], today: string): RosterLine[] {
   return lines.map((l) => ({ ...l, from: fix(l.from), to: fix(l.to) }));
 }
 
-/** The version of a line that applies in the week starting `ws`. */
-export function lineAt(lines: RosterLine[], label: string, ws: string): RosterLine | undefined {
-  return lines.find((l) => l.label === label && (!l.from || l.from <= ws) && (!l.to || ws <= l.to));
+/** Which set of lines a person is on: leads and supervisors have their own when the airline defines them. */
+export function lineGroup(lines: RosterLine[], p: Pick<Person, "role">): LineGroup | undefined {
+  if (p.role === "supervisor") return "supervisor";
+  return p.role === "lead" && lines.some((l) => l.group === "lead") ? "lead" : undefined;
 }
 
-/** Distinct line labels in roster order. */
-export function lineLabels(lines: RosterLine[]): string[] {
-  return [...new Set(lines.map((l) => l.label))].sort();
+/** Order of sections on the printed roster: agents, then supervisors, then leads. */
+export const GROUP_ORDER: Record<string, number> = { "": 0, supervisor: 1, lead: 2 };
+
+/**
+ * Supervisors on an airline's lines: the ones put on them, or, when the airline has supervisor lines and
+ * nobody yet, the first supervisor at that terminal who isn't already on another airline's lines.
+ */
+export function lineSupervisors(airline: Airline, people: Person[], airlines: Airline[]): Person[] {
+  const lines = airline.lines ?? [];
+  if (!lines.some((l) => l.group === "supervisor")) return [];
+  const sups = people.filter((p) => p.role === "supervisor" && p.active !== false);
+  const named = sups.filter((p) => airline.lineAssign?.[p.id]);
+  if (named.length) return named;
+  const taken = new Set(airlines.filter((a) => a.code !== airline.code).flatMap((a) => Object.keys(a.lineAssign ?? {})));
+  const first = sups.filter((p) => p.homeTerminal === airline.terminal && !taken.has(p.id)).sort((a, b) => a.staffNo.localeCompare(b.staffNo))[0];
+  return first ? [first] : [];
+}
+
+/** Who an airline's line roster covers: its agents and leads, plus its supervisors on lines. */
+export function lineMembers(airline: Airline, people: Person[], airlines: Airline[]): Person[] {
+  const team = people.filter((p) => p.active !== false && (p.role === "agent" || p.role === "lead") && p.coreAirline === airline.code);
+  return [...team, ...lineSupervisors(airline, people, airlines)];
+}
+
+/** The version of a line that applies in the week starting `ws`. */
+export function lineAt(lines: RosterLine[], label: string, ws: string, group?: LineGroup): RosterLine | undefined {
+  return lines.find((l) => l.label === label && (l.group ?? undefined) === group && (!l.from || l.from <= ws) && (!l.to || ws <= l.to));
+}
+
+/** Distinct line labels in roster order, for one group of lines. */
+export function lineLabels(lines: RosterLine[], group?: LineGroup): string[] {
+  return [...new Set(lines.filter((l) => (l.group ?? undefined) === group).map((l) => l.label))].sort();
 }
 
 /**
@@ -27,14 +57,19 @@ export function lineLabels(lines: RosterLine[]): string[] {
  * staff number, dealt across the lines in order.
  */
 export function standingLines(airline: Airline, members: Person[]): Map<string, string> {
-  const labels = lineLabels(airline.lines ?? []);
+  const lines = airline.lines ?? [];
   const out = new Map<string, string>();
-  if (!labels.length) return out;
+  if (!lines.length) return out;
   const sorted = [...members].sort((a, b) => Number(b.role === "lead") - Number(a.role === "lead") || a.staffNo.localeCompare(b.staffNo));
-  let i = 0;
+  const dealt = new Map<string, number>();
   for (const p of sorted) {
+    const g = lineGroup(lines, p);
+    const labels = lineLabels(lines, g);
+    if (!labels.length) continue;
     const set = airline.lineAssign?.[p.id];
-    out.set(p.id, set && labels.includes(set) ? set : labels[i++ % labels.length]);
+    const i = dealt.get(g ?? "") ?? 0;
+    out.set(p.id, set && labels.includes(set) ? set : labels[i % labels.length]);
+    if (!(set && labels.includes(set))) dealt.set(g ?? "", i + 1);
   }
   return out;
 }
@@ -61,7 +96,7 @@ export function entriesFromLines(airline: Airline, members: Person[], weekStarts
   for (const ws of weekStarts) {
     for (const p of members) {
       const label = lineFor(airline, standing, p.id, ws);
-      const line = label ? lineAt(lines, label, ws) : undefined;
+      const line = label ? lineAt(lines, label, ws, lineGroup(lines, p)) : undefined;
       for (let d = 0; d < 7; d++) {
         const { shift, time } = lineDay(line, d);
         out.push({ personId: p.id, date: addDays(ws, d), shift, ...(time ? { time } : {}) });
@@ -103,40 +138,45 @@ export function rosterSheet(airline: Airline, members: Person[], weekStarts: str
   const lines = airline.lines ?? [];
   const named = new Map<string, string>();
   for (const l of lines) {
-    const k = keyOf(l.days.map((t) => (t ? normaliseSpan(t) : null)));
+    const k = `${l.group ?? ""}#${keyOf(l.days.map((t) => (t ? normaliseSpan(t) : null)))}`;
     if (!named.has(k)) named.set(k, l.label);
   }
   const standing = standingLines(airline, members);
-  const used = new Set(named.values());
-  let next = 0;
-  const fresh = () => {
-    while (used.has(String.fromCharCode(65 + next))) next++;
-    const l = String.fromCharCode(65 + next++);
-    used.add(l);
+  // Each group (agents, leads) is lettered from A, like the separate blocks on the paper roster
+  const used = new Map<string, Set<string>>();
+  for (const l of lines) used.set(l.group ?? "", (used.get(l.group ?? "") ?? new Set()).add(l.label));
+  const fresh = (g: string) => {
+    const set = used.get(g) ?? new Set<string>();
+    let n = 0;
+    while (set.has(String.fromCharCode(65 + n))) n++;
+    const l = String.fromCharCode(65 + n);
+    used.set(g, set.add(l));
     return l;
   };
-  const labelFor = (pid: string, ws: string, days: (string | null)[]) => {
-    const k = keyOf(days);
-    const own = lines.length ? lineFor(airline, standing, pid, ws) : undefined;
-    if (own && lineAt(lines, own, ws) && keyOf(lineAt(lines, own, ws)!.days.map((t) => (t ? normaliseSpan(t) : null))) === k) return own;
-    if (!named.has(k)) named.set(k, fresh());
+  const labelFor = (p: Person, ws: string, days: (string | null)[]) => {
+    const g = lines.length ? lineGroup(lines, p) ?? "" : p.role === "agent" ? "" : p.role;
+    const k = `${g}#${keyOf(days)}`;
+    const own = lines.length ? lineFor(airline, standing, p.id, ws) : undefined;
+    const ownLine = own ? lineAt(lines, own, ws, lineGroup(lines, p)) : undefined;
+    if (ownLine && `${g}#${keyOf(ownLine.days.map((t) => (t ? normaliseSpan(t) : null)))}` === k) return own!;
+    if (!named.has(k)) named.set(k, fresh(g));
     return named.get(k)!;
   };
 
-  const sorted = [...members].sort((a, b) => Number(b.role === "lead") - Number(a.role === "lead") || a.staffNo.localeCompare(b.staffNo));
+  const sorted = [...members].sort((a, b) => a.staffNo.localeCompare(b.staffNo));
   const blocks = new Map<string, SheetBlock>();
   for (const p of sorted) {
     let seg: { weeks: string[]; days: (string | null)[]; labels: string[]; last: (string | null)[] } | null = null;
     const flush = () => {
       if (!seg) return;
-      const k = `${p.role === "lead" ? "L" : "A"}|${seg.weeks.join(",")}`;
+      const k = `${GROUP_ORDER[lines.length ? lineGroup(lines, p) ?? "" : p.role === "agent" ? "" : p.role]}|${seg.weeks.join(",")}`;
       const b = blocks.get(k) ?? { weekStarts: seg.weeks, rows: [] };
       b.rows.push({ person: p, label: seg.labels[0], days: seg.days, weeks: seg.labels });
       blocks.set(k, b);
     };
     for (const ws of weekStarts) {
       const days = pattern(p.id, ws);
-      const label = labelFor(p.id, ws, days);
+      const label = labelFor(p, ws, days);
       // A line whose pattern changes part-way (same letter, new times) starts a new block, as on the paper roster.
       // Moving to another line just shows the new letter in that week's column.
       if (seg && lines.length && label === seg.labels[seg.labels.length - 1] && keyOf(seg.last) !== keyOf(days)) {
@@ -152,7 +192,9 @@ export function rosterSheet(airline: Airline, members: Person[], weekStarts: str
     }
     flush();
   }
+  // Sections in paper order (agents, supervisors, leads); within one, blocks by their first line, then earliest weeks first
   return [...blocks.entries()]
-    .sort(([a], [b]) => a.localeCompare(b))
-    .map(([, b]) => ({ ...b, rows: b.rows.sort((x, y) => x.label.localeCompare(y.label) || x.person.staffNo.localeCompare(y.person.staffNo)) }));
+    .map(([k, b]) => ({ k, b: { ...b, rows: b.rows.sort((x, y) => x.label.localeCompare(y.label) || x.person.staffNo.localeCompare(y.person.staffNo)) } }))
+    .sort((x, y) => x.k.split("|")[0].localeCompare(y.k.split("|")[0]) || x.b.rows[0].label.localeCompare(y.b.rows[0].label) || x.b.weekStarts[0].localeCompare(y.b.weekStarts[0]))
+    .map(({ b }) => b);
 }
