@@ -1,0 +1,35 @@
+/*
+ * The app frame's one custom variant. The shell root carries `data-sidebar`:
+ *
+ *   full  the 256px sidebar, chosen.
+ *   rail  the 76px icon rail, chosen.
+ *   auto  nobody has chosen: the rail below 1280px, the full sidebar from there up (Gateline's
+ *         default). Rendering it from CSS rather than from a width read in the browser means the
+ *         first paint is already right, and the server never has to guess the screen.
+ *
+ * `rail:` styles a descendant of the shell whenever the sidebar is the rail. The phone drawer is
+ * portalled to <body>, outside the shell, so it is always the full list.
+ */
+@custom-variant rail {
+  &:where([data-sidebar='rail'] *) {
+    @slot;
+  }
+  @media (width < 80rem) {
+    &:where([data-sidebar='auto'] *) {
+      @slot;
+    }
+  }
+}
+
+/* Quiet scrollbars in the sidebar (Gateline's `.nav-scroll`). */
+.nav-scroll {
+  scrollbar-width: thin;
+  scrollbar-color: rgb(255 255 255 / 0.14) transparent;
+}
+.nav-scroll::-webkit-scrollbar {
+  width: 6px;
+}
+.nav-scroll::-webkit-scrollbar-thumb {
+  background: rgb(255 255 255 / 0.14);
+  border-radius: 9999px;
+}
