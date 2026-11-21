@@ -34,7 +34,7 @@ export function applyAbsences<T extends Pick<EngineInput, "roster">>(input: T, a
   if (!absences.length) return input;
   const byPerson = new Map<string, Absence[]>();
   for (const a of absences) byPerson.set(a.personId, [...(byPerson.get(a.personId) ?? []), a]);
-  const roster: RosterEntry[] = input.roster.map((r) => (byPerson.get(r.personId)?.some((a) => absenceCovers(a, r.date)) ? { ...r, shift: "V" } : r));
+  const roster: RosterEntry[] = input.roster.map((r) => (byPerson.get(r.personId)?.some((a) => absenceCovers(a, r.date)) ? { personId: r.personId, date: r.date, shift: "V" } : r));
   return { ...input, roster };
 }
 

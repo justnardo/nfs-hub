@@ -3,7 +3,7 @@ import type {
   Person, Role, RosterEntry, ShiftCode, TeamMember, Terminal, TrainingRecord,
 } from "@nfs/db";
 import { AIRLINES, ROUTES, demoCharters, type Charter, type RouteTemplate } from "./airlines";
-import { fairnessHistory, optimiseWeek, resolveRules, weekPatterns, type RuleSettings } from "@nfs/rules";
+import { entriesFromLines, fairnessHistory, optimiseWeek, resolveLines, resolveRules, weekPatterns, type RuleSettings } from "@nfs/rules";
 import { FIRST_NAMES, LAST_NAMES } from "./names";
 import { rng } from "./prng";
 import { addDays, dayOfWeek, fromMinutes, rangeDays, toMinutes, weekStart } from "@nfs/db";
@@ -76,7 +76,8 @@ function training(r: ReturnType<typeof rng>, airline: string, today: string, ris
 }
 
 export function generateDataset(today: string, nowMinutes: number, config: DatasetConfig = {}): Dataset {
-  const airlines = config.airlines ?? AIRLINES;
+  // Line rosters may carry relative week markers (seed data); pin them to this week.
+  const airlines = (config.airlines ?? AIRLINES).map((a) => (a.lines?.length ? { ...a, lines: resolveLines(a.lines, today) } : a));
   const airlineBy = new Map(airlines.map((a) => [a.code, a]));
   const routes = (config.routes ?? ROUTES).filter((r) => airlineBy.has(r.airline));
   const rules = config.rules ?? resolveRules();
@@ -256,9 +257,24 @@ export function generateDataset(today: string, nowMinutes: number, config: Datas
 
   // Leavers stay on the roster for weeks before their last day, so history is kept
   const activeIn = (w: string) => people.filter((p) => p.active !== false || (p.leftOn && w <= p.leftOn));
+  // Airlines rostered in lines: their teams come straight from the lines, for every week the schedule runs
+  const lineWeeks: string[] = [];
+  for (let ws = windowStart; ws <= horizonDays[horizonDays.length - 1]; ws = addDays(ws, 7)) lineWeeks.push(ws);
+  const lineTeams = new Set<string>();
+  for (const airline of airlines) {
+    if (!airline.lines?.length) continue;
+    const team = people.filter((p) => (p.role === "agent" || p.role === "lead") && p.coreAirline === airline.code && (p.active !== false || p.leftOn));
+    for (const e of entriesFromLines(airline, team, lineWeeks)) {
+      roster.push(e);
+      shiftOf.set(`${e.personId}|${e.date}`, e.shift);
+    }
+    lineTeams.add(airline.code);
+  }
+
   for (const ws of weeks) {
     const active = activeIn(ws);
     for (const airline of airlines) {
+      if (lineTeams.has(airline.code)) continue;
       const agents = active.filter((p) => p.role === "agent" && p.coreAirline === airline.code);
       const leads = active.filter((p) => p.role === "lead" && p.coreAirline === airline.code);
       const current = (id: string, w: string) => {

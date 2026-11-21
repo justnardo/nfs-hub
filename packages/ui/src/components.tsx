@@ -144,7 +144,8 @@ export function DialogContent({ className, children, title, description, footer,
         className={cn(
           "fixed inset-x-0 bottom-0 z-50 flex max-h-[88dvh] w-full flex-col overflow-hidden rounded-t-2xl border border-line bg-card shadow-2xl",
           "sm:inset-x-auto sm:bottom-auto sm:left-1/2 sm:top-1/2 sm:max-h-[90dvh] sm:w-[calc(100vw-2rem)] sm:max-w-lg sm:-translate-x-1/2 sm:-translate-y-1/2 sm:rounded-2xl",
-          className,
+          // A caller's width (max-w-2xl…) applies to the centred card; on phones the sheet is always full width
+          className?.replace(/(^|\s)max-w-/g, "$1sm:max-w-"),
         )}
         {...p}
       >

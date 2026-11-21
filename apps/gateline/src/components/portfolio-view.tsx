@@ -12,7 +12,7 @@ import { eligibleFor } from "@nfs/rules";
 import { AbsenceChip, AbsenceDialog } from "./absence";
 import { ABSENCE_TYPES, type Absence } from "@/lib/absence";
 import { useHub, personName } from "@/lib/store";
-import { AirlineChip, PersonLink } from "@/components/ops";
+import { AirlineChip, PersonLink, shortSpan } from "@/components/ops";
 import { buildPortfolio } from "@/lib/portfolio";
 import { pct } from "@/lib/metrics";
 import { CrewList, useCrew } from "@/components/agent-panels";
@@ -36,6 +36,7 @@ export function PortfolioView({ p }: { p: Person }) {
   const pf = buildPortfolio(p.id, hub.gateLogs, flightById);
   const week = rangeDays(hub.today, 7);
   const roster = new Map(hub.ds.roster.filter((r) => r.personId === p.id).map((r) => [r.date, r.shift]));
+  const rosterTime = new Map(hub.ds.roster.filter((r) => r.personId === p.id && r.time).map((r) => [r.date, r.time!]));
   const airlineData = Object.entries(pf.byAirline).map(([code, n]) => ({ code, n })).sort((a, b) => b.n - a.n);
   const totalDelays = pf.delays.reduce((s, d) => s + d.n, 0);
   const nfsDelays = pf.delays.filter((d) => d.nfs).reduce((s, d) => s + d.n, 0);
@@ -144,7 +145,7 @@ export function PortfolioView({ p }: { p: Person }) {
             <CardContent>
               <div className="grid grid-cols-7 gap-1 text-center">
                 {week.map((d) => {
-                  const lk = dayLook(roster.get(d), hub.absenceOn(p.id, d), roster.size > 0);
+                  const lk = dayLook(roster.get(d), hub.absenceOn(p.id, d), roster.size > 0, rosterTime.get(d));
                   return (
                     <div key={d}>
                       <div className={cn("mb-1 text-[10px] font-semibold", d === hub.today ? "text-brand-700" : "text-muted")}>{d === hub.today ? "Today" : formatDate(d, { weekday: "short" })}</div>
@@ -206,6 +207,7 @@ function HistoryCalendar({ p }: { p: Person }) {
   const [day, setDay] = React.useState(hub.today);
   const map = new Map(hub.ds.airlines.map((a) => [a.code, a]));
   const shift = new Map(hub.ds.roster.filter((r) => r.personId === p.id).map((r) => [r.date, r.shift]));
+  const timeOn = new Map(hub.ds.roster.filter((r) => r.personId === p.id && r.time).map((r) => [r.date, r.time!]));
   const flightById = new Map(hub.ds.flights.map((f) => [f.id, f]));
   const worked = new Map<string, { flightNo: string; airline: string; pos: TeamPosition; logId: string; filed: boolean; delay: number }[]>();
   for (const g of hub.gateLogs) {
@@ -254,7 +256,7 @@ function HistoryCalendar({ p }: { p: Person }) {
             {cells.map((d, i) => {
               if (!d) return <span key={`x${i}`} />;
               const out = d < hub.ds.windowStart || d > hub.ds.horizonEnd;
-              const lk = dayLook(shift.get(d), hub.absenceOn(p.id, d), rostered);
+              const lk = dayLook(shift.get(d), hub.absenceOn(p.id, d), rostered, timeOn.get(d));
               const n = worked.get(d)?.length ?? 0;
               const on = d === day;
               return (
@@ -294,7 +296,7 @@ function HistoryCalendar({ p }: { p: Person }) {
         <div className="rounded-xl border border-line p-3">
           <p className="text-sm font-semibold">{formatDate(day, { weekday: "long", day: "numeric", month: "long" })}</p>
           <p className="mt-0.5 text-xs text-muted">
-            {selAbs ? `${ABSENCE_TYPES[selAbs.type].label}${selAbs.note ? ` · ${selAbs.note}` : ""}` : !selShift || selShift === "O" ? "Day off" : selShift === "V" ? "Vacation" : `${selShift === "E" ? "Early" : selShift === "L" ? "Late" : "Mid"} shift`}
+            {selAbs ? `${ABSENCE_TYPES[selAbs.type].label}${selAbs.note ? ` · ${selAbs.note}` : ""}` : !selShift || selShift === "O" ? "Day off" : selShift === "V" ? "Vacation" : `${selShift === "E" ? "Early" : selShift === "L" ? "Late" : "Mid"} shift${timeOn.get(day) ? ` · ${timeOn.get(day)!.replace("-", "–")}` : ""}`}
           </p>
           {isWork(crew.shift) && (crew.leads.length || crew.agents.length || crew.supervisors.length) ? (
             <div className="mt-3 rounded-lg bg-surface p-2.5">
@@ -321,7 +323,11 @@ function HistoryCalendar({ p }: { p: Person }) {
 
 type DayKind = "work" | "off" | "away";
 /** One look for a day on someone's schedule: working days solid, days off outlined, time away tinted. */
-function dayLook(shift: string | undefined, ab: Absence | undefined | null, rostered = true): { kind: DayKind; cell: string; label: string; title: string } {
+function dayLook(shift: string | undefined, ab: Absence | undefined | null, rostered = true, time?: string): { kind: DayKind; cell: string; label: string; title: string } {
+  const base = dayLookBand(shift, ab, rostered);
+  return time && base.kind === "work" ? { ...base, label: shortSpan(time), title: `${base.title} · ${time.replace("-", "–")}` } : base;
+}
+function dayLookBand(shift: string | undefined, ab: Absence | undefined | null, rostered = true): { kind: DayKind; cell: string; label: string; title: string } {
   if (!rostered && !ab) return { kind: "off", cell: "border-line bg-card text-ink-400", label: "", title: "Not on the shift roster" };
   if (ab) return { kind: "away", cell: `${ABSENCE_TYPES[ab.type].tone} border-transparent`, label: ABSENCE_TYPES[ab.type].short, title: ABSENCE_TYPES[ab.type].label };
   switch (shift) {

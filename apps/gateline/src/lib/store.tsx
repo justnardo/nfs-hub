@@ -246,7 +246,8 @@ export function HubProvider({ children }: { children: React.ReactNode }) {
   // ---------- Manager configuration → engine input ----------
   const airlines = React.useMemo<Airline[]>(() => {
     const edits = state.airline;
-    const base = AIRLINES.map((a) => (edits[a.code] && !isRemoved(edits[a.code]) ? (edits[a.code] as Airline) : a)).filter((a) => !isRemoved(edits[a.code]));
+    // An edit saved before an airline had lines keeps the seed's lines
+    const base = AIRLINES.map((a) => (edits[a.code] && !isRemoved(edits[a.code]) ? { ...(edits[a.code] as Airline), lines: (edits[a.code] as Airline).lines ?? a.lines } : a)).filter((a) => !isRemoved(edits[a.code]));
     const added = Object.entries(edits).filter(([code, v]) => !isRemoved(v) && !AIRLINES.some((a) => a.code === code)).map(([, v]) => v as Airline);
     return [...base, ...added];
   }, [state.airline]);
@@ -275,6 +276,12 @@ export function HubProvider({ children }: { children: React.ReactNode }) {
 
   // ---------- Layer published periods, roster edits and profiles on top ----------
   const periods = React.useMemo(() => (Object.values(state.period) as RosterPeriod[]).sort((a, b) => a.start.localeCompare(b.start) || a.createdAt.localeCompare(b.createdAt)), [state.period]);
+  // Exact times from line rosters, kept as long as the cell still holds the shift the lines gave it
+  const genTimes = React.useMemo(() => {
+    const m = new Map<string, { shift: ShiftCode; time: string }>();
+    for (const e of generated.roster) if (e.time) m.set(`${e.personId}|${e.date}`, { shift: e.shift, time: e.time });
+    return m;
+  }, [generated]);
   const plan = React.useMemo(() => {
     const idx = new Map<string, ShiftCode>();
     for (const e of generated.roster) idx.set(`${e.personId}|${e.date}`, e.shift);
@@ -301,7 +308,8 @@ export function HubProvider({ children }: { children: React.ReactNode }) {
     const roster: RosterEntry[] = [];
     for (const [k, shift] of idx) {
       const [personId, date] = k.split("|");
-      roster.push({ personId, date, shift });
+      const t = genTimes.get(k);
+      roster.push(t && t.shift === shift ? { personId, date, shift, time: t.time } : { personId, date, shift });
     }
     const absent = absenceList;
     const leftOn = new Map(people.filter((p) => p.leftOn).map((p) => [p.id, p.leftOn!]));
@@ -309,7 +317,7 @@ export function HubProvider({ children }: { children: React.ReactNode }) {
     const adv = state.advice as Record<string, FlightAdvice>;
     const flights = Object.keys(adv).length ? generated.flights.map((f) => (adv[f.id]?.gate && adv[f.id].gate !== f.gate ? { ...f, gate: adv[f.id].gate!, gateFrom: f.gate } : f)) : generated.flights;
     return { ...generated, people, roster: withAbsence, flights };
-  }, [generated, plan, overrides, state.profile, state.advice, absenceList]);
+  }, [generated, plan, overrides, state.profile, state.advice, absenceList, genTimes]);
   const liveIdx = React.useMemo(() => new Map(ds.roster.map((r) => [`${r.personId}|${r.date}`, r.shift])), [ds]);
 
   const people = React.useMemo(() => new Map(ds.people.map((p) => [p.id, p])), [ds]);

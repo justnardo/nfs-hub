@@ -1,7 +1,7 @@
 "use client";
 import * as React from "react";
 import { useParams } from "next/navigation";
-import { CalendarPlus, FileText, Loader2, Search, X } from "lucide-react";
+import { CalendarPlus, FileText, Loader2, Search, Sheet, X } from "lucide-react";
 import { Avatar, Badge, Button, Card, CardContent, CardDescription, CardHeader, CardTitle, Input, Select, cn } from "@nfs/ui";
 import { addDays, formatDate, rangeDays } from "@nfs/db";
 import { CoverageContext, SHIFT_LABEL, SHIFT_TIMES } from "@nfs/rules";
@@ -10,6 +10,7 @@ import { periodDays, periodEnd, periodShift, rosterSections, teamLabel, teamMemb
 import { downloadRosterPdf } from "@/lib/pdf";
 import { downloadText, shiftsIcs } from "@/lib/ics";
 import { FirstGlanceCredit, NfsWordmark } from "@/components/brand";
+import { RosterSheetDialog } from "@/components/lines";
 import { RosterGrid } from "@/components/roster-grid";
 import { ShiftChip } from "@/components/ops";
 
@@ -19,6 +20,7 @@ export default function SharedRosterPage() {
   const { token } = useParams<{ token: string }>();
   const hub = useHub();
   const input = useEngineInput();
+  const [sheetOpen, setSheetOpen] = React.useState(false);
   const ctx = React.useMemo(() => new CoverageContext(input), [input]);
   const [me, setMe] = React.useState<string | null>(null);
   const [q, setQ] = React.useState("");
@@ -173,6 +175,7 @@ export default function SharedRosterPage() {
         <CardHeader className="flex-wrap gap-2">
           <div><CardTitle>Team roster</CardTitle><CardDescription>{airline?.name ?? teamLabel(activeTeam, input.airlines)} · week of {formatDate(ws, { day: "numeric", month: "short" })}</CardDescription></div>
           <div className="flex flex-wrap items-center gap-2">
+            {airline ? <Button variant="outline" onClick={() => setSheetOpen(true)}><Sheet /> Roster sheet</Button> : null}
             {p.teams.length > 1 ? (
               <Select value={activeTeam} onChange={(e) => setTeam(e.target.value)} aria-label="Team">
                 {p.teams.map((t) => <option key={t} value={t}>{teamLabel(t, input.airlines)}</option>)}
@@ -182,7 +185,8 @@ export default function SharedRosterPage() {
         </CardHeader>
         <CardContent className="px-2 sm:px-5">
           {person ? null : <div className="px-2">{weekTabs}</div>}
-          <RosterGrid members={members} days={days} shiftOf={(pid, d) => ctx.shift(pid, d)} today={hub.today} highlightId={person?.id} changed={changed} absenceOf={hub.absenceOn} privateAbsence />
+          <RosterGrid members={members} days={days} shiftOf={(pid, d) => ctx.shift(pid, d)} timeOf={(pid, d) => ctx.time(pid, d)} today={hub.today} highlightId={person?.id} changed={changed} absenceOf={hub.absenceOn} privateAbsence />
+          {sheetOpen && airline ? <RosterSheetDialog airline={airline} members={members} initialWeek={ws} onClose={() => setSheetOpen(false)} /> : null}
           <p className="mt-3 px-2 text-[11px] text-muted">E Early {SHIFT_TIMES.E.start}–{SHIFT_TIMES.E.end} · M Mid {SHIFT_TIMES.M.start}–{SHIFT_TIMES.M.end} · L Late {SHIFT_TIMES.L.start}–{SHIFT_TIMES.L.end} · Gold dot: changed since publishing. Read-only — speak to your supervisor about swaps.</p>
         </CardContent>
       </Card>

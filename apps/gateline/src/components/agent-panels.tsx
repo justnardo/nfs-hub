@@ -3,7 +3,7 @@ import * as React from "react";
 import Link from "next/link";
 import { ArrowLeftRight, CalendarPlus, Check, ChevronRight, Clock, GraduationCap, Plane, Stethoscope, Users, X } from "lucide-react";
 import { Badge, Button, Card, CardContent, CardDescription, CardHeader, CardTitle, Dialog, DialogContent, Input, Label, Select, Textarea, cn } from "@nfs/ui";
-import { addDays, formatDate, fromMinutes, rangeDays, timingsFor, toMinutes, type Person, type ShiftCode } from "@nfs/db";
+import { addDays, formatDate, fromMinutes, rangeDays, timingsFor, toMinutes, weekStart as weekStartOf, type Person, type ShiftCode } from "@nfs/db";
 import { deriveStatus } from "@nfs/flights";
 import { PAID_HOURS, SHIFT_TIMES, expiringSoon, isWork } from "@nfs/rules";
 import { useEngineInput, useHub, personName } from "@/lib/store";
@@ -15,6 +15,16 @@ const POS: Record<string, string> = { lead: "Lead", gate: "Gate", jetBridge: "Je
 const SHIFT_NAME: Record<string, string> = { E: "Early", L: "Late", M: "Mid", O: "Off", V: "Vacation" };
 const shiftSpan = (s: ShiftCode | undefined) => (isWork(s) ? `${SHIFT_TIMES[s].start}–${SHIFT_TIMES[s].end}` : "");
 const day = (d: string) => formatDate(d, { weekday: "short", day: "numeric", month: "short" });
+
+/** Exact shift time (line rosters), when the roster has one. */
+function useTimeOf() {
+  const hub = useHub();
+  return React.useMemo(() => {
+    const m = new Map(hub.ds.roster.filter((r) => r.time).map((r) => [`${r.personId}|${r.date}`, r.time!]));
+    return (pid: string, d: string) => m.get(`${pid}|${d}`);
+  }, [hub.ds.roster]);
+}
+const fmtTime = (t: string) => t.replace("-", "–");
 
 /** Shift lookup for everyone, built once per render of the data. */
 function useShiftOf() {
@@ -94,6 +104,10 @@ export function CrewList({ crew, compact = false }: { crew: Crew; compact?: bool
 export function MyShiftToday({ me }: { me: Person }) {
   const hub = useHub();
   const shiftOf = useShiftOf();
+  const timeOf = useTimeOf();
+  const span = (d: string) => (timeOf(me.id, d) ? fmtTime(timeOf(me.id, d)!) : shiftSpan(shiftOf(me.id, d)));
+  const a0 = hub.ds.airlines.find((x) => x.code === me.coreAirline);
+  const line = a0?.lines?.length ? (a0.lineWeeks?.[weekStartOf(hub.today)]?.[me.id] ?? a0.lineAssign?.[me.id]) : undefined;
   const crew = useCrew(me, hub.today);
   const a = hub.ds.airlines.find((x) => x.code === crew.airline);
   const next = React.useMemo(() => rangeDays(addDays(hub.today, 1), 21).find((d) => isWork(shiftOf(me.id, d)) && !hub.absenceOn(me.id, d)), [hub, me.id, shiftOf]);
@@ -104,10 +118,10 @@ export function MyShiftToday({ me }: { me: Person }) {
         <div className="min-w-0 flex-1">
           <p className={cn("text-[11px] font-bold uppercase tracking-[0.14em]", working ? "text-brand-100" : "text-muted")}>My shift today · {day(hub.today)}</p>
           <p className="mt-0.5 font-display text-2xl font-semibold leading-tight">
-            {crew.away ? crew.away : working ? `${SHIFT_NAME[crew.shift!]} · ${shiftSpan(crew.shift)}` : crew.shift === "V" ? "On vacation" : "Day off"}
+            {crew.away ? crew.away : working ? `${SHIFT_NAME[crew.shift!]} · ${span(hub.today)}` : crew.shift === "V" ? "On vacation" : "Day off"}
           </p>
-          {working && a ? <p className="mt-0.5 text-sm text-brand-50">{crew.movedTo ? "Moved today to cover " : ""}{a.name}</p> : null}
-          {!working && next ? <p className="mt-0.5 text-sm text-muted">Next shift: {day(next)} · {SHIFT_NAME[shiftOf(me.id, next)!]} {shiftSpan(shiftOf(me.id, next))}</p> : null}
+          {working && a ? <p className="mt-0.5 text-sm text-brand-50">{crew.movedTo ? "Moved today to cover " : ""}{a.name}{line && !crew.movedTo ? ` · Line ${line}` : ""}</p> : null}
+          {!working && next ? <p className="mt-0.5 text-sm text-muted">Next shift: {day(next)} · {SHIFT_NAME[shiftOf(me.id, next)!]} {span(next)}</p> : null}
         </div>
         {working && a ? <span className="rounded-lg bg-white p-1"><AirlineChip airline={a} size="lg" /></span> : null}
       </div>

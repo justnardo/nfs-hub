@@ -12,3 +12,4 @@ export * from "./optimise";
 export * from "./fixes";
 export * from "./outlook";
 export { SHIFTS } from "@nfs/db";
+export * from "./lines";

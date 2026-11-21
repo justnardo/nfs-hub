@@ -1,4 +1,4 @@
-import type { Airline } from "@nfs/db";
+import type { Airline, RosterLine } from "@nfs/db";
 
 /** Airline marks uploaded in Rampline (public bucket), reused so both modules show the same logos. */
 export const RAMPLINE_MARKS = "https://cajatvbkaltwxtywpsjp.supabase.co/storage/v1/object/public/airline-marks";
@@ -8,6 +8,26 @@ export const RAMPLINE_MARKS = "https://cajatvbkaltwxtywpsjp.supabase.co/storage/
  * SLA minimums are PLACEHOLDERS until NFS supplies the contracted figures — flagged slaConfirmed: false.
  * Station manager names/contacts are fictional.
  */
+/**
+ * Breeze's lines, modelled on NFS's own line roster. Times only; who is on which line is set per team.
+ * The second set of D–G applies from the current week, the way a mid-month change shows on the printed roster.
+ */
+const O = null;
+const BREEZE_LINES: RosterLine[] = [
+  { label: "A", days: ["07:00-15:00", "06:00-14:00", O, "09:00-17:00", "07:00-15:00", "06:00-14:00", O] },
+  { label: "B", days: ["07:00-15:00", "06:00-14:00", O, O, "07:00-15:00", "06:00-14:00", "09:00-17:00"] },
+  { label: "C", days: ["07:00-15:00", "06:00-14:00", O, O, "07:00-15:00", "06:00-14:00", "09:00-17:00"] },
+  { label: "D", to: "@this-week-1", days: ["07:00-15:00", "06:00-14:00", O, O, "08:00-16:00", "14:00-22:00", "09:00-17:00"] },
+  { label: "E", to: "@this-week-1", days: ["12:00-20:00", "14:00-22:00", O, O, "07:00-15:00", "06:00-14:00", "09:00-17:00"] },
+  { label: "F", to: "@this-week-1", days: ["07:00-15:00", "06:00-14:00", O, O, "08:00-16:00", "14:00-22:00", "09:00-17:00"] },
+  { label: "G", to: "@this-week-1", days: ["14:00-22:00", "14:00-22:00", O, O, "07:00-15:00", "06:00-14:00", "09:00-17:00"] },
+  { label: "D", from: "@this-week", days: ["07:00-15:00", "06:00-14:00", O, O, "14:00-22:00", "14:00-22:00", "09:00-17:00"] },
+  { label: "E", from: "@this-week", days: ["14:00-22:00", "14:00-22:00", O, O, "07:00-15:00", "06:00-14:00", "14:00-22:00"] },
+  { label: "F", from: "@this-week", days: ["07:00-15:00", "06:00-14:00", O, O, "14:00-22:00", "14:00-22:00", "09:00-17:00"] },
+  { label: "G", from: "@this-week", days: ["14:00-22:00", "14:00-22:00", O, O, "07:00-15:00", "06:00-14:00", "14:00-22:00"] },
+  { label: "H", days: ["07:00-15:00", "06:00-14:00", O, O, "07:00-15:00", "06:00-14:00", "09:00-17:00"] },
+];
+
 export const AIRLINES: Airline[] = [
   {
     code: "UA",
@@ -113,6 +133,9 @@ export const AIRLINES: Airline[] = [
     stationManager: { name: "S. Whitfield", phone: "+1 242 555 0148", email: "nas@example-breeze.com", preferences: "Paid-bag checks at the counter; seasonal days of operation change each quarter." },
     requiredTraining: ["Breeze Customer Service", "Preclearance Procedures", "Jet Bridge Operation"],
     usesJetBridge: true,
+    // Breeze is rostered in lines, the way NFS issues its rosters: fixed weeks, Tuesday and Wednesday off.
+    // Lines D–G change pattern part-way through the month (see BREEZE_LINES).
+    lines: BREEZE_LINES,
   },
   {
     code: "PD",
@@ -191,7 +214,7 @@ export const ROUTES: RouteTemplate[] = [
   { airline: "WN", flightNo: "WN 2471", dest: "BWI", destName: "Baltimore", std: "14:05", turnMins: 55, aircraft: "B737 MAX 8", gate: "C32", seats: 175, days: [0, 4, 5, 6] },
   // Breeze — US Departures Terminal
   { airline: "MX", flightNo: "MX 811", dest: "CHS", destName: "Charleston", std: "13:10", turnMins: 50, aircraft: "A220-300", gate: "C30", seats: 137, days: [1, 4, 5, 0] },
-  { airline: "MX", flightNo: "MX 637", dest: "ORF", destName: "Norfolk", std: "16:15", turnMins: 50, aircraft: "A220-300", gate: "C36", seats: 137, days: [3, 6] },
+  { airline: "MX", flightNo: "MX 637", dest: "ORF", destName: "Norfolk", std: "16:15", turnMins: 50, aircraft: "A220-300", gate: "C36", seats: 137, days: [0, 6] },
   // Copa — International
   { airline: "CM", flightNo: "CM 336", dest: "PTY", destName: "Panama City", std: "15:05", turnMins: 60, aircraft: "B737-800", gate: "D42", seats: 160 },
   // Porter — International

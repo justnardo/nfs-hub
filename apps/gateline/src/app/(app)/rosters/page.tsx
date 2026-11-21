@@ -2,7 +2,7 @@
 import * as React from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { AlertTriangle, CalendarPlus, CheckCircle2, ChevronLeft, ChevronRight, Download, FileText, History, Loader2, Lock, Settings2, Sparkles, Users, XCircle } from "lucide-react";
+import { AlertTriangle, CalendarPlus, CheckCircle2, ChevronLeft, ChevronRight, Download, FileText, History, Loader2, Lock, Rows3, Sheet, Settings2, Sparkles, Users, XCircle } from "lucide-react";
 import { Avatar, Badge, Button, Card, CardContent, CardDescription, CardHeader, CardTitle, Dialog, DialogContent, Label, PageHeader, Select, Textarea, cn } from "@nfs/ui";
 import { ROLE_LABEL, can } from "@nfs/auth";
 import { addDays, formatDate, rangeDays, shiftDemand, weekStart, type Person, type ShiftCode } from "@nfs/db";
@@ -21,6 +21,7 @@ import { TeamMembersDialog } from "@/components/staff-dialogs";
 import { ABSENCE_TYPES, applyAbsences } from "@/lib/absence";
 import { allTeams, buildPeriod, periodEnd, rosterSections, teamLabel, teamMembers, withPeriod, type TeamKey } from "@/lib/periods";
 import { downloadRosterPdf } from "@/lib/pdf";
+import { LinesDialog, RosterSheetDialog } from "@/components/lines";
 
 export default function RostersPage() {
   return (
@@ -52,17 +53,19 @@ function Rosters() {
   // Weeks a team can be viewed: the history, this week and every week flights are scheduled for
   const covering = (status: "draft" | "published", w: string) =>
     hub.periods.filter((p) => p.status === status && p.teams.includes(team) && p.start <= w && periodEnd(p) >= w).sort((a, b) => (b.publishedAt ?? b.createdAt).localeCompare(a.publishedAt ?? a.createdAt))[0];
+  // Line-rostered teams are known for every week their lines run
+  const lineTeam = !!hub.ds.airlines.find((a) => a.code === team)?.lines?.length;
   const weekList = React.useMemo(() => {
     const out: { ws: string; state: WeekState; note?: string }[] = [];
     const baseEnd = hub.ds.windowDays[hub.ds.windowDays.length - 1];
     for (let w = hub.ds.windowStart; w <= maxWs; w = addDays(w, 7)) {
       const pub = covering("published", w);
       const dr = covering("draft", w);
-      const state: WeekState = addDays(w, 6) < hub.today ? "past" : pub ? "published" : dr && editable ? "draft" : w <= baseEnd ? "rostered" : "none";
+      const state: WeekState = addDays(w, 6) < hub.today ? "past" : pub ? "published" : dr && editable ? "draft" : w <= baseEnd || lineTeam ? "rostered" : "none";
       out.push({ ws: w, state, note: dr && editable ? "A draft covers this week" : undefined });
     }
     return out;
-  }, [hub.periods, hub.ds.windowStart, hub.ds.windowDays, maxWs, team, hub.today, editable]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [hub.periods, hub.ds.windowStart, hub.ds.windowDays, maxWs, team, hub.today, editable, lineTeam]); // eslint-disable-line react-hooks/exhaustive-deps
   const draft = editable ? covering("draft", ws) : undefined;
   const [viewDraft, setViewDraft] = React.useState(true);
   const showingDraft = !!draft && viewDraft;
@@ -71,6 +74,8 @@ function Rosters() {
   const [gapCell, setGapCell] = React.useState<CoverageCell | null>(null);
   const [optOpen, setOptOpen] = React.useState(false);
   const [teamOpen, setTeamOpen] = React.useState(false);
+  const [sheetOpen, setSheetOpen] = React.useState(false);
+  const [linesOpen, setLinesOpen] = React.useState(false);
   const days = rangeDays(ws, 7);
   const [day, setDay] = React.useState(() => (days.includes(hub.today) ? hub.today : days[0]));
   React.useEffect(() => setDay((d) => (days.includes(d) ? d : days.includes(hub.today) ? hub.today : days[0])), [ws]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -146,6 +151,8 @@ function Rosters() {
               <option value="SUP-INTL">Supervisors · International</option>
             </Select>
             {assign && airline ? <Button variant="outline" onClick={() => setTeamOpen(true)}><Users /> Team</Button> : null}
+            {airline ? <Button variant="outline" onClick={() => setSheetOpen(true)}><Sheet /> Roster sheet</Button> : null}
+            {editable && airline ? <Button variant="outline" onClick={() => setLinesOpen(true)}><Rows3 /> Lines</Button> : null}
             <Button variant="outline" onClick={exportPdf} disabled={pdfBusy || unrostered}>{pdfBusy ? <Loader2 className="animate-spin" /> : <FileText />} PDF</Button>
             <Button variant="outline" onClick={exportCsv} disabled={unrostered}><Download /> CSV</Button>
             {editable && addDays(ws, 6) >= hub.today && !unrostered && !showingDraft ? <Button variant="outline" onClick={() => setOptOpen(true)}><Sparkles /> Optimise week</Button> : null}
@@ -186,7 +193,7 @@ function Rosters() {
               <div>
                 <CardTitle className="flex items-center gap-2">{airline ? <AirlineChip airline={airline} size="md" /> : team === "POOL" ? "Float pool" : team === "SUP-US" ? "Supervisors · US Departures" : "Supervisors · International"}</CardTitle>
                 <CardDescription>
-                  {members.filter((m) => m.role === "lead").length} leads · {members.filter((m) => m.role === "agent").length} agents · E {SHIFT_TIMES.E.start}–{SHIFT_TIMES.E.end} · M {SHIFT_TIMES.M.start}–{SHIFT_TIMES.M.end} · L {SHIFT_TIMES.L.start}–{SHIFT_TIMES.L.end}
+                  {members.filter((m) => m.role === "lead").length} leads · {members.filter((m) => m.role === "agent").length} agents · {lineTeam ? "Line roster: times as rostered" : <>E {SHIFT_TIMES.E.start}–{SHIFT_TIMES.E.end} · M {SHIFT_TIMES.M.start}–{SHIFT_TIMES.M.end} · L {SHIFT_TIMES.L.start}–{SHIFT_TIMES.L.end}</>}
                   {manual.length ? ` · ${manual.length} hand change${manual.length > 1 ? "s" : ""}` : ""}
                   {livePeriod ? ` · published ${formatDate(livePeriod.publishedAt!.slice(0, 10), { day: "numeric", month: "short" })} by ${livePeriod.publishedBy?.name}` : ""}
                 </CardDescription>
@@ -257,7 +264,7 @@ function Rosters() {
                                   worst === "soft" && "ring-2 ring-amber-400",
                                 )}
                               >
-                                {ab ? <AbsenceChip a={ab} /> : <ShiftChip shift={s} />}
+                                {ab ? <AbsenceChip a={ab} /> : <ShiftChip shift={s} time={ctx.time(m.id, d)} />}
                                 {isManual ? <span className="absolute -left-1 -top-1 size-2 rounded-full border border-card bg-gold-400" /> : null}
                                 {moved ? <span className="absolute -right-1.5 -top-1.5 rounded bg-brand-500 px-1 text-[8.5px] font-bold text-white">{moved.toAirline}</span> : null}
                               </button>
@@ -440,6 +447,8 @@ function Rosters() {
       {absentCell && hub.people.get(absentCell.personId) ? <AbsenceDialog person={hub.people.get(absentCell.personId)!} date={absentCell.date} absence={hub.absenceOn(absentCell.personId, absentCell.date)} onClose={() => setAbsentCell(null)} /> : null}
       {optOpen ? <OptimiseDialog team={team} members={members} ws={ws} onClose={() => setOptOpen(false)} /> : null}
       {teamOpen && airline ? <TeamMembersDialog airline={airline} onClose={() => setTeamOpen(false)} /> : null}
+      {sheetOpen && airline ? <RosterSheetDialog airline={airline} members={members} initialWeek={ws} onClose={() => setSheetOpen(false)} /> : null}
+      {linesOpen && airline ? <LinesDialog airline={airline} members={members} week={hub.today} onClose={() => setLinesOpen(false)} /> : null}
       {createOpen ? <CreateRosterDialog defaultTeam={team} defaultStart={unrostered ? ws : undefined} onClose={() => setCreateOpen(false)} /> : null}
     </>
   );

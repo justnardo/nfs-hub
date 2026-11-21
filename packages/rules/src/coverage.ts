@@ -3,7 +3,7 @@
  * trained agents on duty. Agents helping another airline count there, not for their own team.
  */
 import { SHIFTS, flightActiveAt, flightAgentNeedAt, rangeDays, toMinutes, type Airline, type Flight, type Person, type Reassignment, type RosterEntry, type ShiftCode } from "@nfs/db";
-import { SLOTS, SLOT_MIN, covers } from "./shifts";
+import { SLOTS, SLOT_MIN, isWork, spanOf } from "./shifts";
 import { eligibleFor } from "./eligibility";
 
 export interface EngineInput {
@@ -63,6 +63,8 @@ export class CoverageContext {
   readonly flightsBy = new Map<string, Flight[]>();
   readonly coreBy = new Map<string, Person[]>();
   readonly peopleBy = new Map<string, Person>();
+  /** Exact shift times where the roster has them (line rosters); otherwise the standard band applies. */
+  readonly times = new Map<string, string>();
   private cache = new Map<string, DayCoverage>();
 
   /** Terminal supervisors on duty count as the lead (Rampline's lead-role default). */
@@ -71,6 +73,7 @@ export class CoverageContext {
   constructor(readonly input: EngineInput, idx?: ShiftIndex, opts?: { supervisorsCountAsLead?: boolean }) {
     if (opts?.supervisorsCountAsLead === false) this.supervisorsCountAsLead = false;
     this.idx = idx ?? buildShiftIndex(input.roster);
+    for (const e of input.roster) if (e.time) this.times.set(key(e.personId, e.date), e.time);
     for (const a of input.airlines) this.airlineBy.set(a.code, a);
     for (const f of input.flights) {
       const k = `${f.airline}|${f.date}`;
@@ -86,6 +89,23 @@ export class CoverageContext {
 
   shift(personId: string, date: string): ShiftCode | undefined {
     return this.idx.get(key(personId, date));
+  }
+
+  time(personId: string, date: string): string | undefined {
+    return this.times.get(key(personId, date));
+  }
+
+  /** Start and end of someone's shift that day in minutes, using the exact time when the roster has one. */
+  span(personId: string, date: string): { start: number; end: number } | null {
+    const s = this.shift(personId, date);
+    if (!isWork(s)) return null;
+    return spanOf(s, this.time(personId, date));
+  }
+
+  /** Is the person on duty at minute t of the date? */
+  onDuty(personId: string, date: string, t: number): boolean {
+    const sp = this.span(personId, date);
+    return !!sp && t >= sp.start && t < sp.end;
   }
 
   day(airlineCode: string, date: string): DayCoverage {
@@ -127,12 +147,12 @@ export class CoverageContext {
       need[s] = n;
       leadNeed[s] = active && a.sla.lead > 0 ? 1 : 0;
       for (const p of [...agents, ...coverAgents]) {
-        if (covers(this.shift(p.id, date), t)) {
+        if (this.onDuty(p.id, date, t)) {
           have[s]++;
           if (n > 0) onDuty.add(p.id);
         }
       }
-      for (const p of [...leads, ...coverLeads, ...supers]) if (covers(this.shift(p.id, date), t)) leadHave[s]++;
+      for (const p of [...leads, ...coverLeads, ...supers]) if (this.onDuty(p.id, date, t)) leadHave[s]++;
     }
 
     const gaps: Gap[] = [];

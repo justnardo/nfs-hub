@@ -6,7 +6,12 @@ import { addDays, dayOfWeek, formatDate, rangeDays, weekStart, type Person, type
 import { resolveRules, type RuleId, type RuleSettings, type Severity } from "./config";
 import { CoverageContext, type EngineInput } from "./coverage";
 import { eligibleFor } from "./eligibility";
-import { PAID_HOURS, SHIFT_LABEL, endMin, isWork, startMin } from "./shifts";
+import { PAID_HOURS, SHIFT_LABEL, isWork, spanOf, startMin } from "./shifts";
+
+/** Forward rotation is judged by band (early → mid → late), not by the minute: 07:00 then 06:00 is still early. */
+const BAND_ORDER = { E: 0, M: 1, L: 2 } as const;
+/** Rules about the shape of a week, which an airline's agreed lines already settle. */
+const LINE_PATTERN_RULES = new Set<RuleId>(["forward-rotation", "days-off-consecutive", "consecutive-lates-max"]);
 
 export interface Violation {
   ruleId: RuleId;
@@ -44,9 +49,12 @@ export function checkPerson(ctx: CoverageContext, p: Person, from: string, days:
   const look = rangeDays(addDays(from, -7), days + 7);
   const codes = look.map((d) => ctx.shift(p.id, d));
   const name = `${p.firstName} ${p.lastName}`;
+  // On a line roster the line itself is the agreed week pattern, so only the safety rules apply to it
+  const onLines = !!(p.coreAirline && ctx.airlineBy.get(p.coreAirline)?.lines?.length);
   const push = (ruleId: RuleId, date: string, message: string) => {
     const r = rules[ruleId];
     if (!r.enabled || date < from || date > to) return;
+    if (onLines && LINE_PATTERN_RULES.has(ruleId)) return;
     out.push({ ruleId, severity: r.severity, personId: p.id, date, message: `${name}: ${message}` });
   };
 
@@ -59,9 +67,11 @@ export function checkPerson(ctx: CoverageContext, p: Person, from: string, days:
     const date = look[i];
     if (isWork(s)) {
       if (lastWork && lastWork.i === i - 1) {
-        const rest = (startMin(s) + 1440 - endMin(lastWork.s)) / 60;
+        const cur = ctx.span(p.id, date) ?? spanOf(s);
+        const prev = ctx.span(p.id, look[i - 1]) ?? spanOf(lastWork.s);
+        const rest = (cur.start + 1440 - prev.end) / 60;
         if (rest < rules["rest-min"].params.hours) push("rest-min", date, `only ${rest.toFixed(1)}h rest after ${SHIFT_LABEL[lastWork.s].toLowerCase()} shift on ${formatDate(look[i - 1])} (minimum ${rules["rest-min"].params.hours}h)`);
-        if (startMin(s) < startMin(lastWork.s)) push("forward-rotation", date, `${SHIFT_LABEL[s].toLowerCase()} shift straight after a ${SHIFT_LABEL[lastWork.s].toLowerCase()} shift — rotation must run forward`);
+        if (BAND_ORDER[s] < BAND_ORDER[lastWork.s]) push("forward-rotation", date, `${SHIFT_LABEL[s].toLowerCase()} shift straight after a ${SHIFT_LABEL[lastWork.s].toLowerCase()} shift — rotation must run forward`);
       }
       dayRun++;
       lateRun = s === "L" ? lateRun + 1 : 0;

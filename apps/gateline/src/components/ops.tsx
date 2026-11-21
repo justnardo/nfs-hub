@@ -54,7 +54,14 @@ export const LEVEL_STYLE: Record<CoverageLevel, string> = {
   none: "bg-surface text-ink-300 border-line",
 };
 
-export function ShiftChip({ shift }: { shift: string }) {
+/** "07:00-15:00" → "07–15" for a roster cell; keeps minutes when they aren't on the hour. */
+export function shortSpan(time: string) {
+  const [a, b] = time.split("-");
+  const f = (t: string) => (t.endsWith(":00") ? t.slice(0, 2) : t);
+  return `${f(a)}–${f(b)}`;
+}
+
+export function ShiftChip({ shift, time }: { shift: string; time?: string }) {
   const styles: Record<string, string> = {
     E: "bg-brand-100 text-brand-800",
     L: "bg-ink-800 text-white",
@@ -63,7 +70,7 @@ export function ShiftChip({ shift }: { shift: string }) {
     V: "bg-gold-100 text-gold-700",
   };
   const label: Record<string, string> = { E: "E", L: "L", M: "M", O: "off", V: "VAC" };
-  return <span className={cn("inline-grid h-7 min-w-9 place-items-center rounded-md px-1.5 text-[11px] font-bold", styles[shift] ?? "")}>{label[shift] ?? shift}</span>;
+  return <span title={time ? time.replace("-", "–") : undefined} className={cn("inline-grid h-7 min-w-9 place-items-center rounded-md px-1.5 font-bold tabular-nums", time ? "text-[10.5px]" : "text-[11px]", styles[shift] ?? "")}>{time ? shortSpan(time) : label[shift] ?? shift}</span>;
 }
 
 /* ---------------- Coverage heatmap ---------------- */

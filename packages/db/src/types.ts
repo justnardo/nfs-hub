@@ -35,6 +35,16 @@ export interface Airline {
   charter?: boolean;
   /** When check-in opens and closes and when boarding should start, in minutes before STD. */
   timings?: AirlineTimings;
+  /**
+   * Line roster, the way NFS presents rosters to agents: each line is a fixed week (Sun–Sat) of
+   * shift times or days off, and each agent is put on a line. When set, the airline's roster is
+   * built from its lines instead of the optimiser.
+   */
+  lines?: RosterLine[];
+  /** Standing line for each person (personId → line label). */
+  lineAssign?: Record<string, string>;
+  /** Week-by-week changes to the standing line (week start → personId → line label). */
+  lineWeeks?: Record<string, Record<string, string>>;
   /** Private link the station manager uses to send feedback without signing in. */
   feedbackToken?: string | null;
 }
@@ -242,6 +252,18 @@ export interface RosterEntry {
   personId: string;
   date: string;
   shift: ShiftCode;
+  /** Exact shift time when it differs from the standard band, e.g. "07:00-15:00". */
+  time?: string;
+}
+
+/** One line of a line roster: a label (A, B, C…) and a week of shift times, Sunday first; null is a day off. */
+export interface RosterLine {
+  label: string;
+  /** Seven entries, Sunday to Saturday: "07:00-15:00" or null for OFF. */
+  days: (string | null)[];
+  /** The line's pattern applies from this week start (inclusive), until `to` if set. Lets a line change mid-month. */
+  from?: string;
+  to?: string;
 }
 
 export interface FeedbackItem {

@@ -44,8 +44,10 @@ export function CellMenu({ current, manual, onPick, onRevert, onClose, onAbsence
 
 /** Simple roster table: staff × 7 days, optional coverage rows and editing. */
 export function RosterGrid({
-  members, days, shiftOf, ctx, airlineCode, today, editable, onPick, highlightId, changed, absenceOf, onAbsence, privateAbsence,
+  members, days, shiftOf, timeOf, ctx, airlineCode, today, editable, onPick, highlightId, changed, absenceOf, onAbsence, privateAbsence,
 }: {
+  /** Exact shift time for line rosters, shown in the cell instead of the band letter. */
+  timeOf?: (personId: string, date: string) => string | undefined;
   members: Person[];
   days: string[];
   shiftOf: (personId: string, date: string) => ShiftCode | undefined;
@@ -103,7 +105,7 @@ export function RosterGrid({
                         title={ab ? (privateAbsence ? "Away" : `${ABSENCE_TYPES[ab.type].label}${ab.note ? ` · ${ab.note}` : ""}`) : `${SHIFT_LABEL[s]}${isChanged ? " · changed since published" : ""}`}
                         className={cn("relative inline-block rounded-md transition-shadow", can && "cursor-pointer hover:ring-2 hover:ring-brand-400")}
                       >
-                        {ab ? (privateAbsence ? <span className="inline-grid h-7 min-w-9 place-items-center rounded-md bg-surface px-1.5 text-[10px] font-bold text-muted">AWAY</span> : <AbsenceChip a={ab} />) : <ShiftChip shift={s} />}
+                        {ab ? (privateAbsence ? <span className="inline-grid h-7 min-w-9 place-items-center rounded-md bg-surface px-1.5 text-[10px] font-bold text-muted">AWAY</span> : <AbsenceChip a={ab} />) : <ShiftChip shift={s} time={(timeOf ?? ctx?.time.bind(ctx))?.(m.id, d)} />}
                         {isChanged ? <span className="absolute -left-1 -top-1 size-2 rounded-full border border-card bg-gold-400" /> : null}
                       </button>
                       {menu === k && onPick ? (
