@@ -11,6 +11,7 @@ import { EVENT_TYPES, flush, isOnline, localEvents, outbox, publish, pullRecent,
 import { ACTION_LABEL, newShareToken, periodDays, periodEnd, teamLabel, teamOf, type Actor, type AuditAction, type AuditEntry, type CellChange, type RosterPeriod, type TeamKey } from "./periods";
 import { ABSENCE_TYPES, absenceCovers, applyAbsences, demoAbsences, type Absence } from "./absence";
 import { demoInbound, demoSsr, type FlightAdvice, type InboundAlert, type Notice } from "./advice";
+import type { LeaveRequest, StaffRequest, SwapRequest } from "./staff-requests";
 import { emptyState, prepareLogo, rebindPush, sendPush, pullAll, remoteEnabled, resetRemote, resizePhoto, subscribeState, uploadAirlineLogo, uploadAvatar, upsert, upsertMany, type Kind, type StateMap } from "./remote";
 
 /**
@@ -128,6 +129,15 @@ interface HubState {
   notices: Notice[];
   unread: number;
   notify: (n: Omit<Notice, "id" | "at" | "by" | "readBy"> & { by?: string }) => void;
+  /** Sends a notice only once: used for reminders that would otherwise repeat on every visit. */
+  remindOnce: (id: string, n: Omit<Notice, "id" | "at" | "by" | "readBy">) => void;
+  /** Shift swaps and leave requests, newest first. */
+  staffRequests: StaffRequest[];
+  requestSwap: (r: Pick<SwapRequest, "with" | "date" | "myShift" | "theirShift" | "note">) => void;
+  respondSwap: (id: string, accept: boolean) => void;
+  requestLeave: (r: Pick<LeaveRequest, "absenceType" | "from" | "to" | "note">) => void;
+  decideRequest: (id: string, approve: boolean, note?: string) => void;
+  cancelRequest: (id: string) => void;
   markRead: (ids: string[]) => void;
   removeCharter: (id: string) => void;
   /** Trim, resize and upload a logo. Returns its URL and a suggested brand colour. */
@@ -647,6 +657,93 @@ export function HubProvider({ children }: { children: React.ReactNode }) {
     [write, entry, absenceList, generated.people],
   );
 
+  const remindOnce = React.useCallback(
+    (id: string, n: Omit<Notice, "id" | "at" | "by" | "readBy">) => {
+      if (state.notice[id]) return;
+      const to = [...new Set(n.to)].filter(Boolean);
+      if (!to.length) return;
+      write([{ kind: "notice", id, payload: { ...n, to, id, at: new Date().toISOString(), by: "Gateline", readBy: [] } satisfies Notice }]);
+    },
+    [write, state.notice],
+  );
+
+  // ---------------- Staff requests: shift swaps and leave ----------------
+  const staffRequests = React.useMemo(
+    () => Object.values(state.staffreq as Record<string, StaffRequest>).filter((r) => r && typeof r === "object" && "type" in r).sort((a, b) => b.at.localeCompare(a.at)),
+    [state.staffreq],
+  );
+  const personOf = React.useCallback((id: string) => generated.people.find((x) => x.id === id), [generated.people]);
+  const approversFor = React.useCallback(
+    (p: Person | undefined, managersToo: boolean) => generated.people.filter((x) => x.active !== false && ((x.role === "supervisor" && x.homeTerminal === p?.homeTerminal) || (managersToo && x.role === "manager"))).map((x) => x.id),
+    [generated.people],
+  );
+  const saveReq = React.useCallback((r: StaffRequest) => write([{ kind: "staffreq", id: r.id, payload: r }]), [write]);
+  const requestSwap = React.useCallback(
+    (r: Pick<SwapRequest, "with" | "date" | "myShift" | "theirShift" | "note">) => {
+      if (!session) return;
+      const full: SwapRequest = { ...r, type: "swap", id: `swap-${crypto.randomUUID().slice(0, 8)}`, by: session.personId, at: new Date().toISOString(), status: "awaiting_colleague" };
+      saveReq(full);
+      notify({ to: [r.with], kind: "team", title: `Shift swap request from ${session.name}`, body: `${fmtDay(r.date)}: you'd work ${shiftWord(r.myShift).toLowerCase()}${["E", "L", "M"].includes(r.theirShift) ? ` and they'd take your ${shiftWord(r.theirShift).toLowerCase()}` : " and they'd have the day off"}. Accept or decline on My schedule.`, href: "/me" });
+    },
+    [session, saveReq, notify],
+  );
+  const respondSwap = React.useCallback(
+    (id: string, accept: boolean) => {
+      const r = staffRequests.find((x) => x.id === id);
+      if (!r || r.type !== "swap" || r.status !== "awaiting_colleague") return;
+      const next: SwapRequest = { ...r, status: accept ? "awaiting_approval" : "declined", colleagueAt: new Date().toISOString(), ...(accept ? {} : { decidedBy: session?.name, decidedAt: new Date().toISOString(), decisionNote: "Colleague declined" }) };
+      saveReq(next);
+      const a = personOf(r.by);
+      const b = personOf(r.with);
+      const names = `${a ? `${a.firstName} ${a.lastName}` : "Agent"} ↔ ${b ? `${b.firstName} ${b.lastName}` : "colleague"}`;
+      if (accept) notify({ to: approversFor(a, false), kind: "team", title: `Shift swap to approve · ${names}`, body: `${fmtDay(r.date)} · ${a?.coreAirline ?? "Float pool"}. Both agreed; rules already checked.`, href: "/requests" });
+      notify({ to: [r.by], kind: "team", title: accept ? "Swap accepted, waiting for approval" : "Swap declined", body: `${b ? b.firstName : "Your colleague"} ${accept ? "accepted" : "declined"} your swap for ${fmtDay(r.date)}.`, href: "/me" });
+    },
+    [staffRequests, session, saveReq, personOf, approversFor, notify],
+  );
+  const requestLeave = React.useCallback(
+    (r: Pick<LeaveRequest, "absenceType" | "from" | "to" | "note">) => {
+      if (!session) return;
+      const full: LeaveRequest = { ...r, type: "leave", id: `leave-${crypto.randomUUID().slice(0, 8)}`, by: session.personId, at: new Date().toISOString(), status: "awaiting_approval" };
+      saveReq(full);
+      const p = personOf(session.personId);
+      const range = r.from === r.to ? fmtDay(r.from) : `${fmtDay(r.from)} – ${fmtDay(r.to)}`;
+      notify({ to: approversFor(p, true), kind: "team", title: `${ABSENCE_TYPES[r.absenceType].label} request · ${session.name}`, body: `${range} · ${p?.coreAirline ?? "Float pool"}${r.note ? ` · ${r.note}` : ""}`, href: "/requests" });
+    },
+    [session, saveReq, personOf, approversFor, notify],
+  );
+  const decideRequest = React.useCallback(
+    (id: string, approve: boolean, note?: string) => {
+      const r = staffRequests.find((x) => x.id === id);
+      if (!r || r.status !== "awaiting_approval") return;
+      const decided = { decidedBy: session?.name, decidedAt: new Date().toISOString(), decisionNote: note || undefined };
+      const a = personOf(r.by);
+      if (r.type === "swap") {
+        saveReq({ ...r, status: approve ? "approved" : "declined", ...decided });
+        if (approve) {
+          const b = personOf(r.with);
+          setCells([{ personId: r.by, date: r.date, shift: r.theirShift }, { personId: r.with, date: r.date, shift: r.myShift }], { source: "manual", reason: `Shift swap approved: ${a?.firstName ?? ""} ↔ ${b?.firstName ?? ""}${note ? ` · ${note}` : ""}` });
+        }
+        notify({ to: [r.by, r.with], kind: "team", title: `Shift swap ${approve ? "approved" : "declined"}`, body: `${fmtDay(r.date)}${approve ? ": your roster is updated." : note ? `: ${note}` : "."}`, href: "/me" });
+      } else {
+        saveReq({ ...r, status: approve ? "approved" : "declined", ...decided });
+        if (approve) saveAbsence({ personId: r.by, type: r.absenceType, from: r.from, to: r.to, note: r.note });
+        notify({ to: [r.by], kind: "team", title: `${ABSENCE_TYPES[r.absenceType].label} ${approve ? "approved" : "declined"}`, body: `${r.from === r.to ? fmtDay(r.from) : `${fmtDay(r.from)} – ${fmtDay(r.to)}`}${note ? ` · ${note}` : ""}`, href: "/me" });
+      }
+      void a;
+    },
+    [staffRequests, session, personOf, saveReq, setCells, saveAbsence, notify],
+  );
+  const cancelRequest = React.useCallback(
+    (id: string) => {
+      const r = staffRequests.find((x) => x.id === id);
+      if (!r || (r.status !== "awaiting_colleague" && r.status !== "awaiting_approval")) return;
+      saveReq({ ...r, status: "cancelled" } as StaffRequest);
+      if (r.type === "swap") notify({ to: [r.with], kind: "team", title: "Swap request withdrawn", body: `The swap for ${fmtDay(r.date)} was cancelled.`, href: "/me" });
+    },
+    [staffRequests, saveReq, notify],
+  );
+
   const changeGate = React.useCallback(
     (flightId: string, gate: string, reason: string) => {
       const f = generated.flights.find((x) => x.id === flightId);
@@ -929,6 +1026,13 @@ export function HubProvider({ children }: { children: React.ReactNode }) {
     notices,
     unread,
     notify,
+    remindOnce,
+    staffRequests,
+    requestSwap,
+    respondSwap,
+    requestLeave,
+    decideRequest,
+    cancelRequest,
     markRead,
     uploadLogo,
     savePerson,

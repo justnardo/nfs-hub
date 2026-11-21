@@ -131,22 +131,39 @@ export const TabsContent = TabsPrimitive.Content;
 export const Dialog = DialogPrimitive.Root;
 export const DialogTrigger = DialogPrimitive.Trigger;
 export const DialogClose = DialogPrimitive.Close;
-export function DialogContent({ className, children, title, description, ...p }: React.ComponentProps<typeof DialogPrimitive.Content> & { title: string; description?: string }) {
+/**
+ * On phones a dialog is a bottom sheet: the title and a large close button stay pinned at the top,
+ * the body scrolls, and actions passed as `footer` stay pinned at the bottom above the browser bar.
+ * From the small breakpoint up it's a centred card.
+ */
+export function DialogContent({ className, children, title, description, footer, ...p }: React.ComponentProps<typeof DialogPrimitive.Content> & { title: string; description?: string; footer?: React.ReactNode }) {
   return (
     <DialogPrimitive.Portal>
       <DialogPrimitive.Overlay className="fixed inset-0 z-50 bg-ink-950/50 backdrop-blur-[2px]" />
       <DialogPrimitive.Content
-        className={cn("fixed left-1/2 top-1/2 z-50 max-h-[90vh] w-[calc(100vw-2rem)] max-w-lg -translate-x-1/2 -translate-y-1/2 overflow-y-auto rounded-2xl border border-line bg-card p-6 shadow-2xl", className)}
+        className={cn(
+          "fixed inset-x-0 bottom-0 z-50 flex max-h-[88dvh] w-full flex-col overflow-hidden rounded-t-2xl border border-line bg-card shadow-2xl",
+          "sm:inset-x-auto sm:bottom-auto sm:left-1/2 sm:top-1/2 sm:max-h-[90dvh] sm:w-[calc(100vw-2rem)] sm:max-w-lg sm:-translate-x-1/2 sm:-translate-y-1/2 sm:rounded-2xl",
+          className,
+        )}
         {...p}
       >
-        <div className="mb-4 pr-8">
-          <DialogPrimitive.Title className="font-display text-lg font-semibold">{title}</DialogPrimitive.Title>
-          {description ? <DialogPrimitive.Description className="mt-1 text-sm text-muted">{description}</DialogPrimitive.Description> : <DialogPrimitive.Description className="sr-only">{title}</DialogPrimitive.Description>}
+        <div className="mx-auto mt-2 h-1.5 w-10 shrink-0 rounded-full bg-ink-300/70 sm:hidden" aria-hidden />
+        <div className="flex shrink-0 items-start gap-3 border-b border-line px-5 pb-3 pt-2.5 sm:px-6 sm:pt-5">
+          <div className="min-w-0 flex-1">
+            <DialogPrimitive.Title className="font-display text-lg font-semibold leading-snug">{title}</DialogPrimitive.Title>
+            {description ? <DialogPrimitive.Description className="mt-1 text-sm text-muted">{description}</DialogPrimitive.Description> : <DialogPrimitive.Description className="sr-only">{title}</DialogPrimitive.Description>}
+          </div>
+          <DialogPrimitive.Close className="-mr-1.5 grid size-10 shrink-0 cursor-pointer place-items-center rounded-full bg-surface text-ink-700 transition-colors hover:bg-brand-50 hover:text-brand-700" aria-label="Close">
+            <X className="size-5" />
+          </DialogPrimitive.Close>
         </div>
-        {children}
-        <DialogPrimitive.Close className="absolute right-4 top-4 rounded-md p-1.5 text-muted transition-colors hover:bg-brand-50 hover:text-brand-700 cursor-pointer" aria-label="Close">
-          <X className="size-4" />
-        </DialogPrimitive.Close>
+        <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-5 py-4 sm:px-6 sm:py-5">{children}</div>
+        {footer ? (
+          <div className="shrink-0 border-t border-line bg-card px-5 pt-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] sm:px-6 sm:pb-4">{footer}</div>
+        ) : (
+          <div className="h-[env(safe-area-inset-bottom)] shrink-0" aria-hidden />
+        )}
       </DialogPrimitive.Content>
     </DialogPrimitive.Portal>
   );

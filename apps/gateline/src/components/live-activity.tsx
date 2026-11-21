@@ -216,7 +216,21 @@ function EventSheet({ e, onClose, airlines }: { e: HubEvent; onClose: () => void
   const Icon = d.icon;
   return (
     <Dialog open onOpenChange={(v) => !v && onClose()}>
-      <DialogContent className="max-w-md" title={f ? `${f.flightNo} · ${d.title}` : d.title} description={f ? `${a?.name ?? f.airline} to ${f.destination} · STD ${f.std} · gate ${f.gate}` : undefined}>
+      <DialogContent
+        className="max-w-md"
+        title={f ? `${f.flightNo} · ${d.title}` : d.title}
+        description={f ? `${a?.name ?? f.airline} to ${f.destination} · STD ${f.std} · gate ${f.gate}` : undefined}
+        footer={
+          <div className="grid grid-cols-2 gap-2 sm:flex sm:justify-end">
+            <Button variant="outline" className="h-11 sm:h-9" onClick={onClose}>Close</Button>
+            {f ? (
+              <Button asChild className="h-11 sm:h-9">
+                <Link href={log?.status === "filed" ? `/records/${log.id}` : `/gate/${f.id}`}>{log?.status === "filed" ? "Open record" : "Open gate log"}</Link>
+              </Button>
+            ) : null}
+          </div>
+        }
+      >
         <div className={cn("flex items-start gap-3 rounded-xl p-3", TONE[d.tone])}>
           <Icon className="mt-0.5 size-5 shrink-0" />
           <p className="text-sm leading-snug">{d.detail}</p>
@@ -247,14 +261,6 @@ function EventSheet({ e, onClose, airlines }: { e: HubEvent; onClose: () => void
             </ol>
           </div>
         ) : null}
-        <div className="mt-5 flex flex-wrap justify-end gap-2">
-          <Button variant="outline" onClick={onClose}>Close</Button>
-          {f ? (
-            <Button asChild>
-              <Link href={log?.status === "filed" ? `/records/${log.id}` : `/gate/${f.id}`}>{log?.status === "filed" ? "Open record" : "Open gate log"}</Link>
-            </Button>
-          ) : null}
-        </div>
       </DialogContent>
     </Dialog>
   );
