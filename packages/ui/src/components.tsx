@@ -202,17 +202,24 @@ export function Avatar({ name, className, tone = "brand", src }: { name: string;
   return <span className={cn("inline-flex size-8 shrink-0 items-center justify-center rounded-full text-[11px] font-bold", tones[tone], className)}>{initials}</span>;
 }
 
-export function Stat({ label, value, sub, tone, icon }: { label: string; value: React.ReactNode; sub?: React.ReactNode; tone?: "ok" | "warn" | "bad" | "brand"; icon?: React.ReactNode }) {
+export function Stat({ label, value, sub, tone, icon, onClick }: { label: string; value: React.ReactNode; sub?: React.ReactNode; tone?: "ok" | "warn" | "bad" | "brand"; icon?: React.ReactNode; onClick?: () => void }) {
   const tones = { ok: "text-ok", warn: "text-warn", bad: "text-bad", brand: "text-brand-600" };
-  return (
-    <Card className="p-4">
+  const body = (
+    <>
       <div className="flex items-center justify-between">
         <span className="text-xs font-semibold text-muted">{label}</span>
-        {icon ? <span className="text-ink-400 [&_svg]:size-4">{icon}</span> : null}
+        {icon ? <span className="text-ink-400 transition-colors group-hover:text-brand-600 [&_svg]:size-4">{icon}</span> : null}
       </div>
       <div className={cn("mt-2 font-display text-2xl font-semibold tabular", tone ? tones[tone] : "text-fg")}>{value}</div>
       {sub ? <div className="mt-1 text-xs text-muted">{sub}</div> : null}
-    </Card>
+      {onClick ? <div className="mt-2 text-[11px] font-semibold text-brand-600 opacity-80 transition-opacity group-hover:opacity-100">Details ›</div> : null}
+    </>
+  );
+  if (!onClick) return <Card className="p-4">{body}</Card>;
+  return (
+    <button type="button" onClick={onClick} className="group cursor-pointer rounded-xl border border-line bg-card p-4 text-left shadow-[var(--shadow-card)] transition-colors hover:border-brand-400 hover:bg-brand-50/50 focus-visible:border-brand-500">
+      {body}
+    </button>
   );
 }
 

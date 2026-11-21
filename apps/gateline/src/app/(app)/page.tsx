@@ -13,6 +13,7 @@ import { AirlineChip, FlightStatusBadge, LEVEL_STYLE, PersonLink, ReassignDialog
 import { pct, summarise } from "@/lib/metrics";
 import { Pagination, usePaged } from "@/components/pagination";
 import { LiveActivity } from "@/components/live-activity";
+import { TodayDetail, trainingDue, type TodayDetailKind } from "@/components/today-details";
 
 export default function TodayPage() {
   return (
@@ -25,6 +26,8 @@ export default function TodayPage() {
 function Today() {
   const hub = useHub();
   const [cell, setCell] = React.useState<CoverageCell | null>(null);
+  const [detail, setDetail] = React.useState<TodayDetailKind | null>(null);
+  const due = React.useMemo(() => trainingDue(hub.ds.people, hub.today), [hub.ds.people, hub.today]);
   const airlines = React.useMemo(() => new Map(hub.ds.airlines.map((a) => [a.code, a])), [hub.ds]);
   const flights = hub.ds.flights.filter((f) => f.date === hub.today);
   const statuses = flights.map((f) => ({ f, s: deriveStatus(f, hub.logByFlight.get(f.id), hub.today, hub.nowMin, timingsFor(hub.ds.airlines.find((a) => a.code === f.airline))), log: hub.logByFlight.get(f.id) }));
@@ -33,7 +36,8 @@ function Today() {
   const departed = statuses.filter((x) => x.s.status === "Departed").length;
 
   const cells = coverageGrid({ airlines: hub.ds.airlines, people: hub.ds.people, flights: hub.ds.flights, roster: hub.ds.roster, reassignments: hub.reassignments }, hub.today, 1);
-  const liveCell = cell ? cells.find((c) => c.airline === cell.airline && c.shift === cell.shift) ?? null : null;
+  // Today's cells refresh live; a future day's gap (from the Coverage gaps summary) is used as picked
+  const liveCell = cell ? (cell.date === hub.today ? cells.find((c) => c.airline === cell.airline && c.shift === cell.shift) ?? cell : cell) : null;
   const gaps = cells.filter((c) => c.level === "red" || c.level === "amber");
   const openDisc = todayLogs.flatMap((l) => l.discrepancies.map((d) => ({ d, l })));
   const expiring = hub.ds.people
@@ -58,12 +62,13 @@ function Today() {
         }
       />
 
-      <div className="grid grid-cols-2 gap-3 @xl/main:grid-cols-3 @4xl/main:grid-cols-5">
-        <Stat label="Departures today" value={`${departed}/${flights.length}`} sub={upcoming ? `Next: ${upcoming.f.flightNo} at ${upcoming.f.std}` : "All departed"} icon={<PlaneTakeoff />} />
-        <Stat label="On-time (D0)" value={sum.flights ? pct(sum.d0) : "—"} tone={sum.d0 >= 85 ? "ok" : sum.d0 >= 70 ? "warn" : "bad"} sub={`${sum.flights} filed records`} icon={<Clock />} />
-        <Stat label="SLA team met" value={sum.flights ? pct(sum.slaCompliance) : "—"} tone={sum.slaCompliance >= 90 ? "ok" : "warn"} sub="per filed flight" icon={<BadgeCheck />} />
-        <Stat label="Coverage gaps" value={gaps.length} tone={gaps.some((g) => g.level === "red") ? "bad" : gaps.length ? "warn" : "ok"} sub={gaps.length ? gaps.map((g) => `${g.airline} ${g.shift}`).join(" · ") : "all shifts at SLA"} icon={<Users />} />
-        <Stat label="Discrepancies" value={openDisc.length} sub="logged at the gate today" icon={<AlertTriangle />} />
+      <div className="grid grid-cols-2 gap-3 @xl/main:grid-cols-3 @6xl/main:grid-cols-6">
+        <Stat onClick={() => setDetail("departures")} label="Departures today" value={`${departed}/${flights.length}`} sub={upcoming ? `Next: ${upcoming.f.flightNo} at ${upcoming.f.std}` : "All departed"} icon={<PlaneTakeoff />} />
+        <Stat onClick={() => setDetail("ontime")} label="On-time (D0)" value={sum.flights ? pct(sum.d0) : "—"} tone={sum.d0 >= 85 ? "ok" : sum.d0 >= 70 ? "warn" : "bad"} sub={`${sum.flights} filed records`} icon={<Clock />} />
+        <Stat onClick={() => setDetail("sla")} label="SLA team met" value={sum.flights ? pct(sum.slaCompliance) : "—"} tone={sum.slaCompliance >= 90 ? "ok" : "warn"} sub="per filed flight" icon={<BadgeCheck />} />
+        <Stat onClick={() => setDetail("gaps")} label="Coverage gaps" value={gaps.length} tone={gaps.some((g) => g.level === "red") ? "bad" : gaps.length ? "warn" : "ok"} sub={gaps.length ? gaps.map((g) => `${g.airline} ${g.shift}`).join(" · ") : "all shifts at SLA"} icon={<Users />} />
+        <Stat onClick={() => setDetail("issues")} label="Discrepancies" value={openDisc.length} sub="logged at the gate today" icon={<AlertTriangle />} />
+        <Stat onClick={() => setDetail("training")} label="Training due" value={due.expired.length + due.soon.length} tone={due.expired.length ? "bad" : due.soon.length ? "warn" : "ok"} sub={`${due.expired.length} expired · ${due.soon.length} in 30 days`} icon={<GraduationCap />} />
       </div>
 
       {/* On phones and narrow screens the live feed sits right under the tiles, not at the bottom. */}
@@ -187,6 +192,7 @@ function Today() {
       </div>
       <p className="mt-6 text-center text-[11px] text-muted">Times are Nassau local. Now {String(Math.floor(hub.nowMin / 60)).padStart(2, "0")}:{String(hub.nowMin % 60).padStart(2, "0")} · {personName(hub.me)}</p>
       <ReassignDialog cell={liveCell} open={!!cell} onOpenChange={(v) => !v && setCell(null)} />
+      {detail ? <TodayDetail kind={detail} onClose={() => setDetail(null)} onFix={(c) => setCell(c)} /> : null}
     </>
   );
 }
