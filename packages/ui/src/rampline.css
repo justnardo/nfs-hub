@@ -1,0 +1,300 @@
+/*
+ * Rampline's app tokens, restated in the NFS hub palette (`styles.css`).
+ *
+ * Rampline grew its own token names before it shared a package with Gateline: shadcn's
+ * `--background / --primary / --muted …`, a brand blue and green, the warn / danger / ok / info /
+ * note status families, the roster band and cell tints and the chart series. Screens use those
+ * names in about a thousand places, so they stay — every one of them now resolves to a Gateline
+ * colour: teal for anything interactive, the three neutrals (surface, card, line) for the frame,
+ * gold only where something is waiting (draft, pending), and green / amber / red for status.
+ *
+ * Import order matters. `styles.css` first, then this file: a theme key declared twice keeps the
+ * later value, and `--color-card` has to stay a variable here so the dark FIDS wall can restate it.
+ *
+ * Three names mean different things in the two apps, and both meanings have to keep working:
+ *
+ *   muted  Gateline: `text-muted`, the secondary text grey.  Rampline: `bg-muted`, a quiet fill.
+ *   ok     Gateline: `text-ok`, the strong green.            Rampline: `bg-ok`, the pale fill.
+ *   warn   Gateline: `text-warn`, the strong amber.          Rampline: `bg-warn`, the pale fill.
+ *
+ * Tailwind v4 looks a `bg-*` value up in `--background-color-*` before `--color-*`, so the fills
+ * are declared there and the Gateline ink keeps `--color-*`. Rampline writes no bare
+ * `text-muted / text-ok / text-warn`, and Gateline paints no `bg-muted`. The one shared casualty
+ * is Gateline's `Progress` in its ok and warn tones, whose bar would take Rampline's pale fill;
+ * Rampline does not use `Progress` yet.
+ */
+
+@theme inline {
+  /* Headings: shadcn's slot, Gateline's display face. */
+  --font-heading: 'Space Grotesk Variable', 'Inter Variable', ui-sans-serif, sans-serif;
+
+  /* Roster bands and cells. */
+  --color-band-early: var(--band-early);
+  --color-band-mid: var(--band-mid);
+  --color-band-late: var(--band-late);
+  --color-cell-off: var(--cell-off);
+  --color-cell-vac: var(--cell-vac);
+  --color-cell-raw: var(--cell-raw);
+  --color-cell-raw-foreground: var(--cell-raw-foreground);
+
+  /*
+   * Brand. `brand-blue` is ink on the page and `brand-blue-solid` a fill that carries white text;
+   * both are Gateline teal now (600 and 500). The names are kept because 60-odd screens use them.
+   */
+  --color-brand-blue: var(--brand-blue);
+  --color-brand-blue-solid: var(--brand-blue-solid);
+  --color-brand-blue-soft: var(--brand-blue-soft);
+  --color-brand-green: var(--brand-green);
+  --color-brand-green-solid: var(--brand-green-solid);
+  --color-brand-green-soft: var(--brand-green-soft);
+
+  /* Status families: a pale fill, a border and an ink. See the note above on the fill names. */
+  --background-color-warn: var(--warn);
+  --color-warn-border: var(--warn-border);
+  --color-warn-foreground: var(--warn-foreground);
+  --color-danger: var(--danger);
+  --color-danger-border: var(--danger-border);
+  --color-danger-foreground: var(--danger-foreground);
+  --background-color-ok: var(--ok);
+  --color-ok-border: var(--ok-border);
+  --color-ok-foreground: var(--ok-foreground);
+  --color-info: var(--info);
+  --color-info-border: var(--info-border);
+  --color-info-foreground: var(--info-foreground);
+  --color-note: var(--note);
+  --color-note-border: var(--note-border);
+  --color-note-foreground: var(--note-foreground);
+
+  /* Analytics series. Recharts takes these as `var(--series-n)` in fill/stroke. */
+  --color-series-1: var(--series-1);
+  --color-series-2: var(--series-2);
+  --color-series-3: var(--series-3);
+  --color-series-4: var(--series-4);
+  --color-series-5: var(--series-5);
+  --color-series-6: var(--series-6);
+
+  /* shadcn's semantic slots. */
+  --color-sidebar-ring: var(--sidebar-ring);
+  --color-sidebar-border: var(--sidebar-border);
+  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
+  --color-sidebar-accent: var(--sidebar-accent);
+  --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
+  --color-sidebar-primary: var(--sidebar-primary);
+  --color-sidebar-foreground: var(--sidebar-foreground);
+  --color-sidebar: var(--sidebar);
+  --color-chart-5: var(--chart-5);
+  --color-chart-4: var(--chart-4);
+  --color-chart-3: var(--chart-3);
+  --color-chart-2: var(--chart-2);
+  --color-chart-1: var(--chart-1);
+  --color-ring: var(--ring);
+  --color-input: var(--input);
+  --color-border: var(--border);
+  --color-destructive: var(--destructive);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-accent: var(--accent);
+  --color-muted-foreground: var(--muted-foreground);
+  --background-color-muted: var(--muted);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-secondary: var(--secondary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-primary: var(--primary);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-popover: var(--popover);
+  --color-card-foreground: var(--card-foreground);
+  --color-card: var(--card);
+  --color-foreground: var(--foreground);
+  --color-background: var(--background);
+
+  /* Gateline's corners: Tailwind's defaults, with xl and 2xl at 14px and 18px (styles.css). */
+  --radius-sm: 0.25rem;
+  --radius-md: 0.375rem;
+  --radius-lg: 0.5rem;
+  --radius-xl: 14px;
+  --radius-2xl: 18px;
+  --radius-3xl: 1.5rem;
+  --radius-4xl: 2rem;
+}
+
+:root {
+  /* The frame: surface page, white cards, one line colour, two inks. */
+  --background: #f4f7f9;
+  --foreground: #0e1a26;
+  --card: #ffffff;
+  --card-foreground: #0e1a26;
+  --popover: #ffffff;
+  --popover-foreground: #0e1a26;
+  --primary: #0b7f8a;
+  --primary-foreground: #ffffff;
+  --secondary: #e9f8f9;
+  --secondary-foreground: #0a6670;
+  --muted: #f4f7f9;
+  --muted-foreground: #5b6b7b;
+  --accent: #e9f8f9;
+  --accent-foreground: #0a6670;
+  --destructive: #dc2626;
+  --border: #e2e8ee;
+  --input: #e2e8ee;
+  --ring: #0e9aa7;
+  --chart-1: #0e9aa7;
+  --chart-2: #6c5ce7;
+  --chart-3: #2fb7c3;
+  --chart-4: #0a6670;
+  --chart-5: #7b93a8;
+  --radius: 0.5rem;
+  --sidebar: #0b1b2b;
+  --sidebar-foreground: #a9bccb;
+  --sidebar-primary: #0e9aa7;
+  --sidebar-primary-foreground: #ffffff;
+  --sidebar-accent: #12283d;
+  --sidebar-accent-foreground: #96dde3;
+  --sidebar-border: #1c3a55;
+  --sidebar-ring: #0e9aa7;
+
+  /*
+   * Bands and cells, in Gateline's softer tints: early teal, mid sand, late dusk, off a neutral
+   * a step under the card, vacation gold (Gateline's VAC chip) and an unreadable cell red.
+   */
+  --band-early: #e2f5f7;
+  --band-mid: #fbf3dd;
+  --band-late: #e7e9f8;
+  --cell-off: #eef1f4;
+  --cell-vac: #fdf1d6;
+  --cell-raw: #fee2e2;
+
+  /* Ink teal-600 on the page, fill teal-500 under white text, soft teal-50 behind both. */
+  --brand-blue: #0b7f8a;
+  --brand-blue-solid: #0e9aa7;
+  --brand-blue-soft: #e9f8f9;
+  --brand-green: #15803d;
+  --brand-green-solid: #16a34a;
+  --brand-green-soft: #dcfce7;
+
+  /* Gateline's soft badge pairs: the *-soft fill, the 200 border, the 800 ink. */
+  --warn: #fef3c7;
+  --warn-border: #fde68a;
+  --warn-foreground: #92400e;
+  --danger: #fee2e2;
+  --danger-border: #fecaca;
+  --danger-foreground: #991b1b;
+  --ok: #dcfce7;
+  --ok-border: #bbf7d0;
+  --ok-foreground: #166534;
+  /* Informational is Gateline's brand tone; the second chip hue is its violet. */
+  --info: #e9f8f9;
+  --info-border: #c9eef1;
+  --info-foreground: #0a6670;
+  --note: #ede9fe;
+  --note-border: #ddd6fe;
+  --note-foreground: #5b21b6;
+  --cell-raw-foreground: #991b1b;
+
+  /* Coverage-heatmap volume ramp, mixed per cell against --card: Gateline teal. */
+  --heat: #0e9aa7;
+  --heat-ink: #ffffff;
+  /* Shortfall ramp, same technique, Gateline's bad red: more ink reads as worse. */
+  --short: #dc2626;
+  --short-ink: #ffffff;
+
+  /*
+   * Chart series. Gateline's validated pair leads (teal, then violet); four more hues follow for
+   * the stacked charts that need them. Checked by computation in `apps/web/test/palette.test.ts`
+   * (lightness band, chroma floor, colour-vision separation, contrast on the card).
+   */
+  --series-1: #0e9aa7; /* teal */
+  --series-2: #6c5ce7; /* violet */
+  --series-3: #008300; /* green: also the fleet accent on Today, so not a warning hue */
+  --series-4: #e87ba4; /* magenta */
+  --series-5: #2a78d6; /* blue */
+  --series-6: #eb6834; /* orange */
+}
+
+/*
+ * The FIDS wall board is the one dark surface left (`<html class="dark">` on `/fids` only). These
+ * are its values from before the light-only change, unchanged, so the wall looks as it did.
+ */
+.dark {
+  --background: oklch(0.145 0 0);
+  --foreground: oklch(0.985 0 0);
+  --card: oklch(0.205 0 0);
+  --card-foreground: oklch(0.985 0 0);
+  --popover: oklch(0.205 0 0);
+  --popover-foreground: oklch(0.985 0 0);
+  --primary: oklch(0.922 0 0);
+  --primary-foreground: oklch(0.205 0 0);
+  --secondary: oklch(0.269 0 0);
+  --secondary-foreground: oklch(0.985 0 0);
+  --muted: oklch(0.269 0 0);
+  --muted-foreground: oklch(0.708 0 0);
+  --accent: oklch(0.269 0 0);
+  --accent-foreground: oklch(0.985 0 0);
+  --destructive: oklch(0.704 0.191 22.216);
+  --border: oklch(1 0 0 / 10%);
+  --input: oklch(1 0 0 / 15%);
+  --ring: oklch(0.556 0 0);
+  --chart-1: oklch(0.87 0 0);
+  --chart-2: oklch(0.556 0 0);
+  --chart-3: oklch(0.439 0 0);
+  --chart-4: oklch(0.371 0 0);
+  --chart-5: oklch(0.269 0 0);
+  --sidebar: oklch(0.205 0 0);
+  --sidebar-foreground: oklch(0.985 0 0);
+  --sidebar-primary: oklch(0.488 0.243 264.376);
+  --sidebar-primary-foreground: oklch(0.985 0 0);
+  --sidebar-accent: oklch(0.269 0 0);
+  --sidebar-accent-foreground: oklch(0.985 0 0);
+  --sidebar-border: oklch(1 0 0 / 10%);
+  --sidebar-ring: oklch(0.556 0 0);
+
+  --band-early: oklch(0.31 0.045 240);
+  --band-mid: oklch(0.32 0.05 85);
+  --band-late: oklch(0.31 0.05 277);
+  --cell-off: oklch(0.29 0 0);
+  --cell-vac: oklch(0.33 0.05 100);
+  --cell-raw: oklch(0.31 0.055 15);
+
+  --brand-blue: oklch(0.78 0.1 250);
+  --brand-blue-solid: #2058a0;
+  --brand-blue-soft: oklch(0.3 0.045 255);
+  --brand-green: oklch(0.8 0.14 140);
+  --brand-green-solid: #3f7a29;
+  --brand-green-soft: oklch(0.31 0.05 145);
+
+  --warn: oklch(0.3 0.055 80);
+  --warn-border: oklch(0.42 0.08 80);
+  --warn-foreground: oklch(0.88 0.09 85);
+  --danger: oklch(0.29 0.06 20);
+  --danger-border: oklch(0.42 0.1 22);
+  --danger-foreground: oklch(0.83 0.1 20);
+  --ok: oklch(0.29 0.05 160);
+  --ok-border: oklch(0.42 0.07 160);
+  --ok-foreground: oklch(0.85 0.11 160);
+  --info: oklch(0.29 0.05 235);
+  --info-border: oklch(0.42 0.08 235);
+  --info-foreground: oklch(0.85 0.09 235);
+  --note: oklch(0.29 0.055 277);
+  --note-border: oklch(0.42 0.09 277);
+  --note-foreground: oklch(0.85 0.09 277);
+  --cell-raw-foreground: oklch(0.86 0.09 15);
+  --heat: oklch(0.62 0.17 258);
+  --heat-ink: #ffffff;
+  --short: oklch(0.62 0.17 25);
+  --short-ink: #ffffff;
+
+  --series-1: #3987e5; /* blue */
+  --series-2: #d95926; /* orange */
+  --series-3: #199e70; /* aqua */
+  --series-4: #c98500; /* yellow */
+  --series-5: #d55181; /* magenta */
+  --series-6: #008300; /* green */
+
+  /*
+   * Gateline's own tokens are literals, so the shared components (a Flightradar link button on a
+   * flight's detail, say) would paint light-theme ink on the dark wall. Restated here for it.
+   */
+  --color-fg: oklch(0.985 0 0);
+  --color-muted: oklch(0.708 0 0);
+  --color-line: oklch(1 0 0 / 10%);
+  --color-surface: oklch(0.269 0 0);
+  --color-brand-50: oklch(0.3 0.045 200);
+}
