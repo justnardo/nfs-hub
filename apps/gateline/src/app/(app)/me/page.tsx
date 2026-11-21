@@ -7,6 +7,7 @@ import { useHub } from "@/lib/store";
 import { PortfolioView } from "@/components/portfolio-view";
 import { periodDays, periodEnd, teamLabel, teamOf } from "@/lib/periods";
 import { downloadText, shiftsIcs } from "@/lib/ics";
+import { MyFlightsToday, MyHours, MyRequests, MyShiftToday, MyTraining } from "@/components/agent-panels";
 
 export default function MePage() {
   const hub = useHub();
@@ -14,8 +15,23 @@ export default function MePage() {
   if (!me) return null;
   const mine = hub.periods.filter((p) => p.status === "published" && p.grid[me.id] !== undefined && periodEnd(p) >= hub.today).sort((a, b) => a.start.localeCompare(b.start));
   const shiftOf = new Map(hub.ds.roster.filter((r) => r.personId === me.id).map((r) => [r.date, r.shift]));
+  const rostered = shiftOf.size > 0;
+  const onGate = me.role === "agent" || me.role === "lead";
   return (
     <>
+      {rostered ? (
+        <div className="mb-5 space-y-4">
+          <MyShiftToday me={me} />
+          <div className="grid gap-4 @3xl/main:grid-cols-2">
+            {onGate ? <MyFlightsToday me={me} /> : null}
+            <MyRequests me={me} />
+          </div>
+          <div className="grid gap-4 @3xl/main:grid-cols-2">
+            <MyHours me={me} />
+            <MyTraining me={me} />
+          </div>
+        </div>
+      ) : null}
       {mine.length ? (
         <div className="mb-5 space-y-2">
           {mine.map((p) => (

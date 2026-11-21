@@ -14,16 +14,21 @@
   --color-brand-50: #e9f8f9;
   --color-brand-100: #c9eef1;
   --color-brand-200: #96dde3;
+  --color-brand-300: #5fcad4;
   --color-brand-400: #2fb7c3;
   --color-brand-500: #0e9aa7;
   --color-brand-600: #0b7f8a;
   --color-brand-700: #0a6670;
   --color-brand-800: #0b525a;
+  --color-brand-900: #0a3f46;
 
   --color-gold-100: #fdf1d6;
+  --color-gold-200: #fbe2a8;
+  --color-gold-300: #f8cd73;
   --color-gold-400: #f5b83d;
   --color-gold-500: #e0a325;
   --color-gold-700: #9a6a0c;
+  --color-gold-900: #5c3f07;
 
   --color-surface: #f4f7f9;
   --color-card: #ffffff;

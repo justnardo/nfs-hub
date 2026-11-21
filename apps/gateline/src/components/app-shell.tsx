@@ -3,7 +3,7 @@ import * as React from "react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import {
-  BarChart3, CalendarDays, History, ClipboardList, Grid3x3, KeyRound, LayoutDashboard, LogOut, Menu, MessageSquareWarning, PanelLeftClose, PanelLeftOpen,
+  BarChart3, CalendarDays, History, Inbox, ClipboardList, Grid3x3, KeyRound, LayoutDashboard, LogOut, Menu, MessageSquareWarning, PanelLeftClose, PanelLeftOpen,
   Plane, PlaneTakeoff, Settings2, UserCog, RotateCcw, Smartphone, UserRound, Users, Wifi, WifiOff, X,
 } from "lucide-react";
 import { Avatar, Badge, Button, cn } from "@nfs/ui";
@@ -33,6 +33,7 @@ const NAV: { group: string; items: NavItem[] }[] = [
     items: [
       { href: "/coverage", label: "SLA coverage", icon: Grid3x3, perm: "reassign.request", mobile: true },
       { href: "/rosters", label: "Rosters", icon: CalendarDays, perm: "roster.view" },
+      { href: "/requests", label: "Staff requests", icon: Inbox, perm: "roster.edit" },
       { href: "/changes", label: "Change log", icon: History, perm: "audit.view" },
       { href: "/airlines", label: "Airlines", icon: Plane, perm: "staff.view" },
       { href: "/agents", label: "Agents", icon: Users, perm: "staff.view" },
@@ -143,6 +144,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
 
   const visible = NAV.map((g) => ({ ...g, items: g.items.filter((i) => !i.perm || can(role, i.perm)) })).filter((g) => g.items.length);
   const mobileItems = visible.flatMap((g) => g.items).filter((i) => i.mobile).slice(0, 4);
+  const pendingRequests = hub.staffRequests.filter((r) => r.status === "awaiting_approval").length;
   const active = (href: string) => (href === "/" ? pathname === "/" : pathname.startsWith(href));
   const nowLabel = `${formatDate(hub.today, { weekday: "short", day: "numeric", month: "short" })} · ${String(Math.floor(hub.nowMin / 60)).padStart(2, "0")}:${String(hub.nowMin % 60).padStart(2, "0")}`;
   const signOutNow = () => {
@@ -174,6 +176,9 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                     {on ? <span className="absolute left-0 top-1/2 h-5 w-[3px] -translate-y-1/2 rounded-r-full bg-brand-400" /> : null}
                     <i.icon className={cn("shrink-0", rail ? "size-[18px]" : "size-4")} />
                     {rail ? null : <span className="truncate">{i.label}</span>}
+                    {i.href === "/requests" && pendingRequests ? (
+                      <span className={cn("grid min-w-5 place-items-center rounded-full bg-gold-500 px-1 text-[10px] font-bold text-ink-900", rail ? "absolute right-1 top-1 h-4 min-w-4" : "ml-auto h-5")}>{pendingRequests}</span>
+                    ) : null}
                   </Link>
                 </RailTip>
               );

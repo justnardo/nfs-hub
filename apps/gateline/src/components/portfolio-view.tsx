@@ -15,6 +15,8 @@ import { useHub, personName } from "@/lib/store";
 import { AirlineChip, PersonLink } from "@/components/ops";
 import { buildPortfolio } from "@/lib/portfolio";
 import { pct } from "@/lib/metrics";
+import { CrewList, useCrew } from "@/components/agent-panels";
+import { isWork } from "@nfs/rules";
 
 const POS: Record<TeamPosition, string> = { lead: "Lead", gate: "Gate", jetBridge: "Jet bridge", counter: "Counter" };
 
@@ -232,6 +234,7 @@ function HistoryCalendar({ p }: { p: Person }) {
   }
   const monthSummary = !rostered ? "Not on the shift roster: managers and admin work office hours." : `${counts.work} working day${counts.work === 1 ? "" : "s"} · ${counts.off} off${counts.away ? ` · ${counts.away} away` : ""} this month`;
   const sel = worked.get(day) ?? [];
+  const crew = useCrew(p, day);
   const selAbs = hub.absenceOn(p.id, day);
   const selShift = shift.get(day);
   return (
@@ -293,6 +296,12 @@ function HistoryCalendar({ p }: { p: Person }) {
           <p className="mt-0.5 text-xs text-muted">
             {selAbs ? `${ABSENCE_TYPES[selAbs.type].label}${selAbs.note ? ` · ${selAbs.note}` : ""}` : !selShift || selShift === "O" ? "Day off" : selShift === "V" ? "Vacation" : `${selShift === "E" ? "Early" : selShift === "L" ? "Late" : "Mid"} shift`}
           </p>
+          {isWork(crew.shift) && (crew.leads.length || crew.agents.length || crew.supervisors.length) ? (
+            <div className="mt-3 rounded-lg bg-surface p-2.5">
+              <p className="mb-1.5 text-xs font-semibold">On shift with {hub.me?.id === p.id ? "you" : p.firstName}</p>
+              <CrewList crew={crew} compact />
+            </div>
+          ) : null}
           <div className="mt-3 space-y-1.5">
             {sel.length === 0 ? <p className="text-xs text-muted">{day > hub.today ? "Future day: flights appear once worked." : "No flights logged for them this day."}</p> : null}
             {sel.map((w) => (
