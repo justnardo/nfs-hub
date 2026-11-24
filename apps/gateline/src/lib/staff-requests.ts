@@ -90,3 +90,55 @@ export function checkSwap(input: EngineInput, rules: RuleSettings, a: Person, b:
 export function airlineName(airlines: Airline[], code?: string | null) {
   return airlines.find((a) => a.code === code)?.name ?? "Float pool";
 }
+
+/**
+ * Sample requests so the Staff requests inbox has real work in it on a fresh demo: leave and swaps
+ * waiting for a manager, one waiting on a colleague, and a couple already decided. Built from the live
+ * roster so every swap is between two people on the same team who really work different shifts that day.
+ */
+export function demoRequests(today: string, people: Person[], shiftOf: (pid: string, d: string) => ShiftCode | undefined): StaffRequest[] {
+  const at = (days: number, hm: string) => `${addDays(today, days)}T${hm}:00.000Z`;
+  const team = (code: string) => people.filter((p) => p.role === "agent" && p.active !== false && p.coreAirline === code && p.id !== "p4100");
+  const sup = people.find((p) => p.role === "supervisor" && p.active !== false);
+  const supName = sup ? `${sup.firstName} ${sup.lastName}` : "Duty supervisor";
+  const out: StaffRequest[] = [];
+  const used = new Set<string>();
+  const pick = (code: string, n = 0) => team(code).filter((p) => !used.has(p.id))[n];
+  const swapPair = (code: string, fromDay: number) => {
+    const ms = team(code).filter((p) => !used.has(p.id));
+    for (let k = fromDay; k < fromDay + 6; k++) {
+      const d = addDays(today, k);
+      for (const a of ms) for (const b of ms) {
+        if (a.id === b.id) continue;
+        const sa = shiftOf(a.id, d);
+        const sb = shiftOf(b.id, d);
+        if ((sa === "E" && sb === "L") || (sa === "L" && sb === "E")) return { a, b, d, sa, sb };
+      }
+    }
+    return null;
+  };
+  const leave = (id: string, p: Person | undefined, type: LeaveRequest["absenceType"], from: number, to: number, asked: string, note: string, decided?: { status: "approved" | "declined"; days: number; note?: string }) => {
+    if (!p) return;
+    used.add(p.id);
+    out.push({
+      id, type: "leave", by: p.id, at: asked, absenceType: type, from: addDays(today, from), to: addDays(today, to), note,
+      status: decided ? decided.status : "awaiting_approval",
+      ...(decided ? { decidedBy: supName, decidedAt: at(decided.days, "15:20"), decisionNote: decided.note } : {}),
+    });
+  };
+  leave("req-demo-1", pick("UA"), "annual", 9, 11, at(-1, "09:14"), "Family wedding in Andros");
+  leave("req-demo-2", pick("AC"), "personal", 4, 4, at(0, "07:40"), "My son's graduation in the morning");
+  const s1 = swapPair("CM", 3);
+  if (s1) {
+    used.add(s1.a.id); used.add(s1.b.id);
+    out.push({ id: "req-demo-3", type: "swap", by: s1.a.id, with: s1.b.id, date: s1.d, myShift: s1.sa!, theirShift: s1.sb!, at: at(-1, "18:20"), colleagueAt: at(0, "08:05"), note: "Doctor's appointment that afternoon", status: "awaiting_approval" });
+  }
+  const s2 = ["WS", "JY", "AC", "UA"].reduce<ReturnType<typeof swapPair>>((hit, code) => hit ?? swapPair(code, 5), null);
+  if (s2) {
+    used.add(s2.a.id); used.add(s2.b.id);
+    out.push({ id: "req-demo-4", type: "swap", by: s2.a.id, with: s2.b.id, date: s2.d, myShift: s2.sa!, theirShift: s2.sb!, at: at(0, "06:55"), note: "Church conference that evening", status: "awaiting_colleague" });
+  }
+  leave("req-demo-5", pick("BW"), "annual", 14, 18, at(-4, "11:02"), "Trip to Miami booked in August", { status: "approved", days: -2, note: "Approved. Enjoy the trip." });
+  leave("req-demo-6", pick("UA"), "personal", 2, 2, at(-3, "16:45"), "Moving house", { status: "declined", days: -2, note: "United is short on that late shift. Can you pick another day this week?" });
+  return out;
+}

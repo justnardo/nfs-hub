@@ -7,12 +7,12 @@
  *  leave-empty — always last
  * Every option is simulated: does it close the gap, and which rules would it break?
  */
-import { addDays, rangeDays, weekStart, type Person, type Reassignment, type ShiftCode } from "@nfs/db";
+import { SHIFTS, addDays, rangeDays, toMinutes, weekStart, type Person, type Reassignment, type ShiftCode } from "@nfs/db";
 import { resolveRules, type RuleSettings } from "./config";
 import { CoverageContext, buildShiftIndex, cellFromDay, key, type CoverageCell, type EngineInput } from "./coverage";
 import { checkPerson, type Violation } from "./check";
 import { eligibleFor } from "./eligibility";
-import { SHIFT_LABEL, isWork } from "./shifts";
+import { SHIFT_LABEL, SLOT_MIN, isWork } from "./shifts";
 
 export type FixKind = "pull" | "swap" | "dayoff" | "overtime" | "leave-empty";
 
@@ -36,6 +36,25 @@ export interface Fix {
   newHard: Violation[];
   newSoft: Violation[];
   rank: number;
+  /** What the shift looks like once this fix is in: agents against SLA and any gap left. */
+  after?: { assigned: number; required: number; leadsAssigned: number; leadsRequired: number; gaps: string };
+  /** One line on what the fix does to the gap, e.g. "Gap 15:45–19:00 → 17:00–19:00". */
+  effect?: string;
+}
+
+/** Agent-minutes short across the shift's demand window (plus a missing lead), so partial cover still counts. */
+export function shiftShortfall(ctx: CoverageContext, airline: string, date: string, shift: "E" | "L"): number {
+  const dc = ctx.day(airline, date);
+  const from = toMinutes(SHIFTS[shift].demandFrom) / SLOT_MIN;
+  const to = toMinutes(SHIFTS[shift].demandTo) / SLOT_MIN;
+  let short = 0;
+  for (let i = from; i < to; i++) short += Math.max(0, dc.need[i] - dc.have[i]) + 2 * Math.max(0, dc.leadNeed[i] - dc.leadHave[i]);
+  return short;
+}
+
+/** "15:45–19:00" for a cell's gaps, or "" when there are none. */
+export function gapText(cell: CoverageCell): string {
+  return cell.gaps.map((g) => `${g.from}–${g.to}`).join(", ");
 }
 
 const name = (p: Person) => `${p.firstName} ${p.lastName}`;
@@ -68,12 +87,25 @@ export function suggestFixes(input: EngineInput, target: { airline: string; date
   const checkFrom = ws;
   const out: Fix[] = [];
   const already = new Set(input.reassignments.filter((r) => r.date === target.date).map((r) => r.personId));
+  const shortBefore = shiftShortfall(base, target.airline, target.date, target.shift);
+  const gapsBefore = gapText(cellBefore);
 
   const finish = (f: Omit<Fix, "closes" | "improves" | "newHard" | "newSoft" | "rank" | "needsOverride"> & { needsOverride?: boolean }, affected: Person[]) => {
     const after = simulate(input, baseIdx, f.edits, f.reassignment);
     const cell = cellFromDay(after.day(target.airline, target.date), target.shift, after);
     const closes = cell.assigned >= cell.required && cell.leadsAssigned >= cell.leadsRequired;
-    const improves = cell.assigned > cellBefore.assigned || cell.leadsAssigned > cellBefore.leadsAssigned;
+    const shortAfter = shiftShortfall(after, target.airline, target.date, target.shift);
+    const gapsAfter = gapText(cell);
+    // Helps only when the manager can see it: more agents at the worst point, the lead covered, or a shorter gap window
+    const improves = closes || cell.assigned > cellBefore.assigned || cell.leadsAssigned > cellBefore.leadsAssigned || (shortAfter < shortBefore && gapsAfter !== gapsBefore);
+    const left = cell.required - cell.assigned;
+    const effect = closes
+      ? `Closes the gap: ${cell.assigned}/${cell.required} agents${cell.leadsRequired ? ", lead covered" : ""}`
+      : cell.assigned > cellBefore.assigned
+        ? `${cellBefore.assigned}/${cellBefore.required} → ${cell.assigned}/${cell.required} agents${left > 0 ? ` · ${left} still short` : ""}`
+        : cell.leadsAssigned > cellBefore.leadsAssigned
+          ? `Covers the lead${left > 0 ? ` · ${left} agent${left > 1 ? "s" : ""} still short` : ""}`
+          : `Gap ${gapsBefore || "—"} → ${gapsAfter || "none"}`;
     let newV: Violation[] = [];
     for (const p of affected) newV = newV.concat(personDiff(base, after, p, checkFrom, rules));
     // A move must not open a gap elsewhere silently
@@ -89,8 +121,8 @@ export function suggestFixes(input: EngineInput, target: { airline: string; date
     }
     const newHard = newV.filter((v) => v.severity === "hard");
     const newSoft = newV.filter((v) => v.severity !== "hard");
-    const rank = (closes ? 0 : improves ? 100 : 500) + newHard.length * 1000 + (needsOverride ? 50 : 0) + newSoft.length * 5 + COST[f.kind];
-    out.push({ ...f, closes, improves, needsOverride, newHard, newSoft, rank });
+    const rank = (closes ? 0 : improves ? 100 + Math.round((50 * shortAfter) / Math.max(1, shortBefore)) : 500) + newHard.length * 1000 + (needsOverride ? 50 : 0) + newSoft.length * 5 + COST[f.kind];
+    out.push({ ...f, closes, improves, needsOverride, newHard, newSoft, rank, effect, after: { assigned: cell.assigned, required: cell.required, leadsAssigned: cell.leadsAssigned, leadsRequired: cell.leadsRequired, gaps: gapsAfter } });
   };
 
   // ---- pull: someone on that shift elsewhere, current on this airline
@@ -163,8 +195,10 @@ export function suggestFixes(input: EngineInput, target: { airline: string; date
     );
   }
 
-  out.sort((a, b) => a.rank - b.rank);
-  const top = out.slice(0, limit);
+  // Only offer moves that actually help this shift: one that changes nothing just looks like a broken button
+  const useful = out.filter((f) => f.improves);
+  useful.sort((a, b) => a.rank - b.rank);
+  const top = useful.slice(0, limit);
   top.push({ id: "leave", kind: "leave-empty", title: "Leave the gap", detail: "Keep the roster as it is and note the shortfall.", edits: [], closes: false, improves: false, needsOverride: false, newHard: [], newSoft: [], rank: 9999 });
   return top;
 }

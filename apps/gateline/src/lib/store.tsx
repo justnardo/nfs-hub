@@ -11,7 +11,7 @@ import { EVENT_TYPES, flush, isOnline, localEvents, outbox, publish, pullRecent,
 import { ACTION_LABEL, newShareToken, periodDays, periodEnd, teamLabel, teamOf, type Actor, type AuditAction, type AuditEntry, type CellChange, type RosterPeriod, type TeamKey } from "./periods";
 import { ABSENCE_TYPES, absenceCovers, applyAbsences, demoAbsences, type Absence } from "./absence";
 import { demoInbound, demoSsr, type FlightAdvice, type InboundAlert, type Notice } from "./advice";
-import type { LeaveRequest, StaffRequest, SwapRequest } from "./staff-requests";
+import { demoRequests, type LeaveRequest, type StaffRequest, type SwapRequest } from "./staff-requests";
 import { emptyState, prepareLogo, rebindPush, sendPush, pullAll, remoteEnabled, resetRemote, resizePhoto, subscribeState, uploadAirlineLogo, uploadAvatar, upsert, upsertMany, type Kind, type StateMap } from "./remote";
 
 /**
@@ -105,7 +105,8 @@ interface HubState {
   setFeedbackLink: (code: string, on: boolean) => string | null;
   setCells: (edits: CellEdit[], meta?: CellMeta) => void;
   revertCells: (keys: { personId: string; date: string }[]) => void;
-  applyFix: (fix: Fix, overrideReason?: string | null) => void;
+  /** Applies a suggested fix; returns the move's id (if a cover move) and the cells it changed, for undo. */
+  applyFix: (fix: Fix, overrideReason?: string | null) => { refId?: string; cells: CellChange[] };
   saveAirline: (a: Airline) => void;
   removeAirline: (code: string) => void;
   saveRoute: (r: RouteTemplate) => void;
@@ -515,6 +516,7 @@ export function HubProvider({ children }: { children: React.ReactNode }) {
         reason: overrideReason,
       }));
       write(rows);
+      return { refId, cells };
     },
     [write, cellRows, changesOf, entry, teamsOf, by],
   );
@@ -676,10 +678,12 @@ export function HubProvider({ children }: { children: React.ReactNode }) {
   );
 
   // ---------------- Staff requests: shift swaps and leave ----------------
-  const staffRequests = React.useMemo(
-    () => Object.values(state.staffreq as Record<string, StaffRequest>).filter((r) => r && typeof r === "object" && "type" in r).sort((a, b) => b.at.localeCompare(a.at)),
-    [state.staffreq],
-  );
+  const staffRequests = React.useMemo(() => {
+    const saved = state.staffreq as Record<string, StaffRequest>;
+    const seed = demoRequests(clock.date, generated.people, (pid, d) => plan.get(`${pid}|${d}`));
+    const merged = [...seed.map((r) => saved[r.id] ?? r), ...Object.values(saved).filter((r) => !seed.some((x) => x.id === r?.id))];
+    return merged.filter((r) => r && typeof r === "object" && "type" in r).sort((a, b) => b.at.localeCompare(a.at));
+  }, [state.staffreq, clock.date, generated.people, plan]);
   const personOf = React.useCallback((id: string) => generated.people.find((x) => x.id === id), [generated.people]);
   const approversFor = React.useCallback(
     (p: Person | undefined, managersToo: boolean) => generated.people.filter((x) => x.active !== false && ((x.role === "supervisor" && x.homeTerminal === p?.homeTerminal) || (managersToo && x.role === "manager"))).map((x) => x.id),

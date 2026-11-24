@@ -14,6 +14,7 @@ import { useHub } from "@/lib/store";
 import { FirstGlanceCredit, GatelineWordmark, NfsMark } from "./brand";
 import { GlobalSearch, type SearchPage } from "./global-search";
 import { NotificationBell } from "./notifications";
+import { FlashHost } from "./flash";
 import { SiteLoader, useFirstLoad } from "./site-loader";
 
 type NavItem = { href: string; label: string; icon: React.ComponentType<{ className?: string }>; perm?: Permission; mobile?: boolean };
@@ -226,6 +227,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
 
   return (
     <div className="min-h-dvh">
+      <FlashHost />
       {overlay}
       {/* Desktop sidebar: full height, fixed; collapses to an icon rail */}
       <aside

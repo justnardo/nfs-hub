@@ -1,11 +1,13 @@
 "use client";
 import * as React from "react";
 import Link from "next/link";
-import { AlertTriangle, Ban, CheckCircle2, ShieldAlert } from "lucide-react";
+import { AlertTriangle, Ban, CheckCircle2, ShieldAlert, Undo2 } from "lucide-react";
 import { Avatar, Badge, Button, Dialog, DialogContent, Label, Textarea, cn } from "@nfs/ui";
 import { can } from "@nfs/auth";
 import { SHIFTS, formatDate, type Airline, type FlightStatus, type Person } from "@nfs/db";
-import { checkReassignment, suggestFixes, type CoverageCell, type CoverageLevel } from "@nfs/rules";
+import { checkReassignment, gapText, suggestFixes, type CoverageCell, type CoverageLevel } from "@nfs/rules";
+import type { CellChange } from "@/lib/periods";
+import { flash, markChanged } from "./flash";
 import { useHub, useEngineInput, personName } from "@/lib/store";
 
 export function AirlineChip({ airline, size = "sm" }: { airline: Airline; size?: "sm" | "md" | "lg" }) {
@@ -151,10 +153,13 @@ export function ReassignDialog({ cell, open, onOpenChange }: { cell: CoverageCel
   const [chosen, setChosen] = React.useState<string | null>(null);
   const [reason, setReason] = React.useState("");
   const [showBlocked, setShowBlocked] = React.useState(false);
+  // What was applied while this window is open, so the manager sees it land and can undo it
+  const [done, setDone] = React.useState<{ title: string; before: CoverageCell; refId?: string; cells: CellChange[]; undone?: boolean }[]>([]);
   React.useEffect(() => {
     setChosen(null);
     setReason("");
     setShowBlocked(false);
+    setDone([]);
   }, [cell?.airline, cell?.date, cell?.shift]);
 
   const fixes = React.useMemo(() => (cell && open ? suggestFixes(input, { airline: cell.airline, date: cell.date, shift: cell.shift }, hub.rules) : []), [cell, open, input, hub.rules]);
@@ -184,6 +189,31 @@ export function ReassignDialog({ cell, open, onOpenChange }: { cell: CoverageCel
     return true;
   };
   const closesAny = fixes.some((f) => f.closes && !f.newHard.length);
+  const covered = cell.assigned >= cell.required && cell.leadsAssigned >= cell.leadsRequired;
+  const last = done.filter((d) => !d.undone).at(-1);
+  const shiftName = `${airline.code} ${SHIFTS[cell.shift].label.toLowerCase()}`;
+  const apply = (f: (typeof fixes)[number]) => {
+    const before = cell;
+    const res = hub.applyFix(f, f.needsOverride ? reason.trim() : null);
+    const keys = [...res.cells.map((c) => `${c.personId}|${c.date}`), ...(f.reassignment ? [`${f.reassignment.personId}|${f.reassignment.date}`] : [])];
+    markChanged(keys);
+    setDone((d) => [...d, { title: f.title, before, refId: res.refId, cells: res.cells }]);
+    setChosen(null);
+    setReason("");
+    const a = f.after;
+    flash({
+      title: f.closes ? `Gap closed · ${shiftName}` : `Fix applied · ${shiftName}`,
+      body: `${f.title}.${a ? ` Now ${a.assigned}/${a.required} agents${a.gaps ? `, still short ${a.gaps}` : ""}.` : ""}`,
+    });
+  };
+  const undo = (i: number) => {
+    const d = done[i];
+    if (d.refId) hub.removeReassignment(d.refId);
+    if (d.cells.length) hub.setCells(d.cells.map((c) => ({ personId: c.personId, date: c.date, shift: c.from ?? "O" })), { source: "fix", title: `Undid: ${d.title}` });
+    markChanged(d.cells.map((c) => `${c.personId}|${c.date}`));
+    setDone((all) => all.map((x, j) => (j === i ? { ...x, undone: true } : x)));
+    flash({ title: "Fix undone", body: `${d.title} was reversed.`, tone: "warn" });
+  };
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -204,6 +234,29 @@ export function ReassignDialog({ cell, open, onOpenChange }: { cell: CoverageCel
           </div>
         ) : null}
 
+        {last ? (
+          <div className={cn("mb-4 rounded-xl border p-3.5", covered ? "border-emerald-200 bg-ok-soft" : "border-brand-100 bg-brand-50")}>
+            <div className="flex items-start gap-2.5">
+              <CheckCircle2 className={cn("mt-0.5 size-5 shrink-0", covered ? "text-ok" : "text-brand-600")} />
+              <div className="min-w-0 flex-1">
+                <p className="text-sm font-semibold">{covered ? "Gap closed" : "Fix applied"}: {last.title}</p>
+                <p className="mt-0.5 text-sm">
+                  {shiftName} was <span className="font-semibold">{last.before.assigned}/{last.before.required}</span>, now{" "}
+                  <span className={cn("font-semibold", covered ? "text-ok" : "text-brand-700")}>{cell.assigned}/{cell.required}</span> agents
+                  {cell.leadsRequired ? ` · lead ${cell.leadsAssigned}/${cell.leadsRequired}` : ""}.
+                  {!covered ? <> {cell.required - cell.assigned > 0 ? `${cell.required - cell.assigned} still short` : "Lead still needed"}{gapText(cell) ? <> (<span className="font-semibold">{gapText(cell)}</span>)</> : null}; pick another fix below.</> : null}
+                </p>
+                <p className="mt-1 text-xs text-muted">The roster, coverage and Today are already updated{done.filter((d) => !d.undone).length > 1 ? ` · ${done.filter((d) => !d.undone).length} fixes applied here` : ""}.</p>
+              </div>
+            </div>
+            <div className="mt-3 flex flex-wrap justify-end gap-2">
+              <Button variant="outline" size="sm" className="h-10 sm:h-8" onClick={() => undo(done.lastIndexOf(last))}><Undo2 className="size-4" /> Undo</Button>
+              {covered ? <Button size="sm" className="h-10 sm:h-8" onClick={() => onOpenChange(false)}>Done</Button> : null}
+            </div>
+          </div>
+        ) : null}
+
+        {covered && last ? null : (<>
         <div className="mb-2 flex items-center justify-between">
           <p className="text-xs font-semibold uppercase tracking-wide text-muted">Suggested fixes · best first</p>
           {!closesAny && fixes.length > 1 ? <Badge tone="warn">No single move closes this gap</Badge> : null}
@@ -230,6 +283,7 @@ export function ReassignDialog({ cell, open, onOpenChange }: { cell: CoverageCel
                     <Badge tone={f.kind === "pull" ? "brand" : f.kind === "overtime" ? "gold" : "neutral"}>{FIX_LABEL[f.kind]}</Badge>
                   </div>
                   <p className="mt-0.5 text-xs text-muted">{f.detail}</p>
+                  {f.effect && f.kind !== "leave-empty" ? <p className={cn("mt-0.5 text-xs font-semibold", f.closes ? "text-ok" : "text-brand-700")}>{f.effect}</p> : null}
                   {[...f.newHard, ...f.newSoft].slice(0, 2).map((v) => (
                     <p key={v.ruleId + v.date + v.message} className={cn("mt-0.5 text-xs", v.severity === "hard" ? "text-bad" : "text-amber-700")}>{v.severity === "hard" ? "Breaks: " : "Note: "}{v.message.replace(/^[^:]+: /, "")}</p>
                   ))}
@@ -255,6 +309,9 @@ export function ReassignDialog({ cell, open, onOpenChange }: { cell: CoverageCel
           </div>
         ) : null}
 
+        {fixes.length === 1 ? <p className="mt-2 rounded-lg bg-surface p-3 text-xs text-muted">Nobody on shift can help this gap without breaking a rule. Cover from another team, overtime approval, or a roster change for the week is needed.</p> : null}
+        </>)}
+
         {fix && fix.kind !== "leave-empty" ? (
           <div className="mt-4 space-y-3 border-t border-line pt-4">
             {fix.needsOverride ? (
@@ -273,11 +330,7 @@ export function ReassignDialog({ cell, open, onOpenChange }: { cell: CoverageCel
               <Button variant="outline" onClick={() => setChosen(null)}>Cancel</Button>
               <Button
                 disabled={fix.needsOverride && reason.trim().length < 4}
-                onClick={() => {
-                  hub.applyFix(fix, fix.needsOverride ? reason.trim() : null);
-                  setChosen(null);
-                  setReason("");
-                }}
+                onClick={() => apply(fix)}
               >
                 {fix.needsOverride ? "Override and apply" : "Apply fix"}
               </Button>

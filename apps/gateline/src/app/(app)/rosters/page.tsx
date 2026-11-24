@@ -22,6 +22,7 @@ import { ABSENCE_TYPES, applyAbsences } from "@/lib/absence";
 import { allTeams, buildPeriod, periodEnd, rosterSections, teamLabel, teamMembers, withPeriod, type TeamKey } from "@/lib/periods";
 import { downloadRosterPdf } from "@/lib/pdf";
 import { LinesDialog, RosterSheetDialog } from "@/components/lines";
+import { flash, markChanged, useChanged } from "@/components/flash";
 import { RosterImportDialog } from "@/components/roster-import-dialog";
 
 export default function RostersPage() {
@@ -74,6 +75,8 @@ function Rosters() {
   const [menu, setMenu] = React.useState<{ personId: string; date: string } | null>(null);
   const [gapCell, setGapCell] = React.useState<CoverageCell | null>(null);
   const [optOpen, setOptOpen] = React.useState(false);
+  const [optDone, setOptDone] = React.useState<(OptimiseOutcome & { team: string; ws: string; undone?: boolean }) | null>(null);
+  const changed = useChanged();
   const [teamOpen, setTeamOpen] = React.useState(false);
   const [sheetOpen, setSheetOpen] = React.useState(false);
   const [linesOpen, setLinesOpen] = React.useState(false);
@@ -167,6 +170,30 @@ function Rosters() {
       <div className="mb-4">
         <WeekStrip weeks={weekList} value={ws} onChange={setWs} today={hub.today} />
       </div>
+      {optDone && optDone.team === team && optDone.ws === ws ? (
+        <div className={cn("mb-4 flex flex-col gap-3 rounded-xl border p-4 sm:flex-row sm:items-center", optDone.undone ? "border-line bg-surface" : "border-emerald-200 bg-ok-soft")}>
+          <CheckCircle2 className={cn("size-6 shrink-0", optDone.undone ? "text-muted" : "text-ok")} />
+          <div className="min-w-0 flex-1">
+            <p className="font-semibold">{optDone.undone ? "Optimise undone: the roster is back as it was" : `Optimised: ${optDone.edits.length} shift${optDone.edits.length > 1 ? "s" : ""} changed`}</p>
+            {!optDone.undone ? (
+              <p className="mt-0.5 text-sm text-emerald-900">
+                Coverage gaps <b>{optDone.before.gaps} → {optDone.after.gaps}</b> · rule breaks <b>{optDone.before.hard} → {optDone.after.hard}</b>. The changed shifts are outlined in green below; the SLA rows and coverage already show the new figures.
+              </p>
+            ) : null}
+          </div>
+          <div className="flex gap-2">
+            {!optDone.undone ? (
+              <Button variant="outline" size="sm" className="h-10 sm:h-8" onClick={() => {
+                hub.setCells(optDone.edits.map((e) => ({ personId: e.personId, date: e.date, shift: e.from })), { source: "optimise", title: `Undid: ${optDone.title}` });
+                markChanged(optDone.edits.map((e) => `${e.personId}|${e.date}`));
+                setOptDone({ ...optDone, undone: true });
+                flash({ title: "Optimise undone", body: `${optDone.edits.length} shifts are back as they were.`, tone: "warn" });
+              }}>Undo</Button>
+            ) : null}
+            <Button variant="ghost" size="sm" className="h-10 sm:h-8" onClick={() => setOptDone(null)}>Dismiss</Button>
+          </div>
+        </div>
+      ) : null}
       {draft ? (
         <div className={cn("mb-4 flex flex-wrap items-center gap-3 rounded-xl border px-4 py-3 text-sm", showingDraft ? "border-gold-400 bg-gold-100/50" : "border-line bg-card")}>
           <span className="size-2 rounded-full bg-gold-500" />
@@ -265,10 +292,12 @@ function Rosters() {
                                   editable && !past && "cursor-pointer hover:ring-2 hover:ring-brand-400",
                                   worst === "hard" && "ring-2 ring-bad",
                                   worst === "soft" && "ring-2 ring-amber-400",
+                                  !worst && changed.has(k) && "ring-2 ring-emerald-500 ring-offset-1 ring-offset-card",
                                 )}
                               >
                                 {ab ? <AbsenceChip a={ab} /> : <ShiftChip shift={s} time={ctx.time(m.id, d)} />}
                                 {isManual ? <span className="absolute -left-1 -top-1 size-2 rounded-full border border-card bg-gold-400" /> : null}
+                                {changed.has(k) ? <span className="absolute -bottom-1 -right-1 grid size-3.5 place-items-center rounded-full bg-emerald-500 text-white"><CheckCircle2 className="size-2.5" /></span> : null}
                                 {moved ? <span className="absolute -right-1.5 -top-1.5 rounded bg-brand-500 px-1 text-[8.5px] font-bold text-white">{moved.toAirline}</span> : null}
                               </button>
                               {menu?.personId === m.id && menu.date === d ? (
@@ -326,6 +355,7 @@ function Rosters() {
               )}
               <div className="mt-3 flex flex-wrap items-center gap-4 px-2 text-[11px] text-muted">
                 <span className="inline-flex items-center gap-1.5"><span className="size-2 rounded-full bg-gold-400" /> Changed by hand (hover to see who; the engine keeps it when optimising)</span>
+                {changed.size ? <span className="inline-flex items-center gap-1.5"><span className="size-3 rounded ring-2 ring-emerald-500" /> Just changed by a fix or optimise</span> : null}
                 <span className="inline-flex items-center gap-1.5"><span className="size-3 rounded ring-2 ring-bad" /> Breaks a rule</span>
                 <span className="inline-flex items-center gap-1.5"><span className="size-3 rounded ring-2 ring-amber-400" /> Should fix</span>
                 <span className="inline-flex items-center gap-1.5"><span className="rounded bg-red-100 px-1 text-[9px] font-bold text-red-800">SICK</span> Absent (sick, leave, maternity…): hover for the reason</span>
@@ -448,7 +478,16 @@ function Rosters() {
 
       <ReassignDialog cell={gapCell ? cells.find((c) => c.date === gapCell.date && c.shift === gapCell.shift) ?? gapCell : null} open={!!gapCell} onOpenChange={(v) => !v && setGapCell(null)} />
       {absentCell && hub.people.get(absentCell.personId) ? <AbsenceDialog person={hub.people.get(absentCell.personId)!} date={absentCell.date} absence={hub.absenceOn(absentCell.personId, absentCell.date)} onClose={() => setAbsentCell(null)} /> : null}
-      {optOpen ? <OptimiseDialog team={team} members={members} ws={ws} onClose={() => setOptOpen(false)} /> : null}
+      {optOpen ? (
+        <OptimiseDialog
+          team={team}
+          members={members}
+          ws={ws}
+          onClose={() => setOptOpen(false)}
+          onApplied={(o) => setOptDone({ ...o, team, ws })}
+          onFixGaps={gaps.length ? () => setGapCell(gaps[0]) : undefined}
+        />
+      ) : null}
       {teamOpen && airline ? <TeamMembersDialog airline={airline} onClose={() => setTeamOpen(false)} /> : null}
       {sheetOpen && airline ? <RosterSheetDialog airline={airline} initialWeek={ws} onClose={() => setSheetOpen(false)} /> : null}
       {importOpen ? <RosterImportDialog airline={airline} onClose={() => setImportOpen(false)} /> : null}
@@ -458,11 +497,21 @@ function Rosters() {
   );
 }
 
-function OptimiseDialog({ team, members, ws, onClose }: { team: TeamKey; members: Person[]; ws: string; onClose: () => void }) {
+interface OptimiseOutcome {
+  title: string;
+  before: { hard: number; soft: number; gaps: number };
+  after: { hard: number; soft: number; gaps: number };
+  edits: (CellEdit & { from: ShiftCode })[];
+}
+
+type OptResult = { edits: (CellEdit & { from: ShiftCode })[]; notes: string[]; before: { hard: number; soft: number; gaps: number }; after: { hard: number; soft: number; gaps: number } };
+const score = (m: { hard: number; soft: number; gaps: number }) => m.hard * 1000 + m.gaps * 10 + m.soft;
+
+function OptimiseDialog({ team, members, ws, onClose, onApplied, onFixGaps }: { team: TeamKey; members: Person[]; ws: string; onClose: () => void; onApplied: (o: OptimiseOutcome) => void; onFixGaps?: () => void }) {
   const hub = useHub();
   const input = useEngineInput();
   const airline = hub.ds.airlines.find((a) => a.code === team);
-  const result = React.useMemo(() => {
+  const runOnce = (seed: number): OptResult => {
     const ctx = new CoverageContext(input);
     const days = rangeDays(ws, 7);
     const prevDays = rangeDays(addDays(ws, -7), 7);
@@ -475,7 +524,7 @@ function OptimiseDialog({ team, members, ws, onClose }: { team: TeamKey; members
           { people: members.filter((m) => m.role === "lead"), demand: (d, s) => Math.min(1, shiftDemand(flightsOf(d), airline, s).leads) },
         ]
       : [{ people: members, demand: () => 1 }];
-    const edits: CellEdit[] = [];
+    const edits: (CellEdit & { from: ShiftCode })[] = [];
     const notes: string[] = [];
     for (const g of groups) {
       if (!g.people.length) continue;
@@ -495,13 +544,13 @@ function OptimiseDialog({ team, members, ws, onClose }: { team: TeamKey; members
         history: (id) => fairnessHistory(id, histDays, (pid, d) => ctx.shift(pid, d)),
         counts: (id) => (airline ? eligibleFor(hub.people.get(id)!, airline, ws).ok : true),
         rules: hub.rules,
-        seed: `opt-${team}-${ws}-${Date.now()}`,
+        seed: `opt-${team}-${ws}-${seed}`,
         restarts: 5,
       }, patterns);
       notes.push(...plan.notes);
       for (const p of g.people) {
         plan.patterns.get(p.id)!.forEach((s, i) => {
-          if (ctx.shift(p.id, days[i]) !== s) edits.push({ personId: p.id, date: days[i], shift: s });
+          if (ctx.shift(p.id, days[i]) !== s) edits.push({ personId: p.id, date: days[i], shift: s, from: ctx.shift(p.id, days[i]) ?? "O" });
         });
       }
     }
@@ -514,46 +563,107 @@ function OptimiseDialog({ team, members, ws, onClose }: { team: TeamKey; members
     const editKey = new Map(edits.map((e) => [`${e.personId}|${e.date}`, e.shift]));
     const after = input.roster.map((r) => (editKey.has(`${r.personId}|${r.date}`) ? { ...r, shift: editKey.get(`${r.personId}|${r.date}`)! } : r));
     return { edits, notes, before: measure(input.roster), after: measure(after) };
-  }, [input, ws, team]); // eslint-disable-line react-hooks/exhaustive-deps
+  };
+  // The engine is randomised, so try a few starts and keep the best; it only proposes what beats today's roster
+  const [result, setResult] = React.useState<OptResult | null>(null);
+  const [tries, setTries] = React.useState(0);
+  const TRIES = 4;
+  React.useEffect(() => {
+    let cancelled = false;
+    let best: OptResult | null = null;
+    const step = (i: number) => {
+      if (cancelled) return;
+      const r = runOnce(i + 1);
+      if (!best || score(r.after) < score(best.after) || (score(r.after) === score(best.after) && r.edits.length < best.edits.length)) best = r;
+      setTries(i + 1);
+      if (i + 1 < TRIES) setTimeout(() => step(i + 1), 0);
+      else setResult(best);
+    };
+    setResult(null);
+    setTries(0);
+    const t = setTimeout(() => step(0), 30);
+    return () => {
+      cancelled = true;
+      clearTimeout(t);
+    };
+  }, [ws, team]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const better = result.after.hard < result.before.hard || (result.after.hard === result.before.hard && result.after.gaps < result.before.gaps);
+  const better = !!result && result.edits.length > 0 && score(result.after) < score(result.before);
+  const teamName = airline?.name ?? teamLabel(team, hub.ds.airlines);
+  const apply = () => {
+    if (!result) return;
+    const title = `Optimised ${teamLabel(team, hub.ds.airlines)} · week of ${formatDate(ws, { day: "numeric", month: "short" })}: ${result.edits.length} shift${result.edits.length > 1 ? "s" : ""}`;
+    hub.setCells(result.edits.map(({ personId, date, shift }) => ({ personId, date, shift })), { source: "optimise", title });
+    markChanged(result.edits.map((e) => `${e.personId}|${e.date}`));
+    flash({ title: "Roster optimised", body: `${result.edits.length} shift${result.edits.length > 1 ? "s" : ""} changed · gaps ${result.before.gaps} → ${result.after.gaps} · rule breaks ${result.before.hard} → ${result.after.hard}. Changed shifts are outlined in green.` });
+    onApplied({ title, before: result.before, after: result.after, edits: result.edits });
+    onClose();
+  };
   return (
     <Dialog open onOpenChange={(v) => !v && onClose()}>
-      <DialogContent className="max-w-xl" title="Optimise week" description={`${airline?.name ?? "Team"} · week of ${formatDate(ws, { day: "numeric", month: "long" })}. Past days and manager changes stay as they are.`}>
-        <div className="grid grid-cols-3 gap-2 text-center">
-          {(["gaps", "hard", "soft"] as const).map((k) => (
-            <div key={k} className="rounded-lg border border-line p-2">
-              <div className="text-[10px] font-bold uppercase tracking-wide text-muted">{k === "gaps" ? "Coverage gaps" : k === "hard" ? "Rule breaks" : "Should fix"}</div>
-              <div className="mt-1 font-display text-lg font-semibold tabular">
-                {result.before[k]} <span className="text-muted">→</span> <span className={result.after[k] < result.before[k] ? "text-ok" : result.after[k] > result.before[k] ? "text-bad" : ""}>{result.after[k]}</span>
-              </div>
-            </div>
-          ))}
-        </div>
-        <p className="mt-3 text-sm">{result.edits.length ? `${result.edits.length} cell${result.edits.length > 1 ? "s" : ""} would change.` : "The current roster is already the best the engine can find."}</p>
-        {result.notes.length ? (
-          <div className="mt-3 space-y-1.5">
-            <p className="text-xs font-semibold uppercase tracking-wide text-muted">What the engine can't cover</p>
-            {result.notes.map((n) => <p key={n} className="rounded-md bg-warn-soft px-2 py-1.5 text-xs text-amber-900">{n}</p>)}
+      <DialogContent
+        className="max-w-xl"
+        title="Optimise week"
+        description={`${teamName} · week of ${formatDate(ws, { day: "numeric", month: "long" })}. Past days and manager changes stay as they are.`}
+        footer={
+          <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+            <Button variant="outline" className="h-11 sm:h-9" onClick={onClose}>{result && !better ? "Close" : "Cancel"}</Button>
+            {result && !better && onFixGaps && result.before.gaps > 0 ? (
+              <Button className="h-11 sm:h-9" onClick={() => { onClose(); onFixGaps(); }}>Fix the gaps one by one</Button>
+            ) : null}
+            {better ? (
+              <Button className="h-11 sm:h-9" onClick={apply}><Lock className="size-4" /> Apply {result!.edits.length} change{result!.edits.length === 1 ? "" : "s"}</Button>
+            ) : null}
           </div>
-        ) : null}
-        {result.edits.length ? (
-          <details className="mt-3 text-xs">
-            <summary className="cursor-pointer font-semibold text-brand-600">See the changes</summary>
-            <ul className="mt-2 max-h-40 space-y-0.5 overflow-y-auto">
-              {result.edits.map((e) => {
-                const p = hub.people.get(e.personId);
-                return <li key={e.personId + e.date}>{personName(p)} · {formatDate(e.date)}: <span className="font-semibold">{SHIFT_LABEL[e.shift]}</span></li>;
+        }
+      >
+        {!result ? (
+          <div className="grid place-items-center gap-3 py-10 text-center">
+            <Loader2 className="size-7 animate-spin text-brand-500" />
+            <p className="text-sm font-semibold">Trying arrangements… {tries}/{TRIES}</p>
+            <p className="text-xs text-muted">Checking every rest, days-off and training rule against flight demand.</p>
+          </div>
+        ) : (
+          <>
+            <div className="grid grid-cols-3 gap-2 text-center">
+              {(["gaps", "hard", "soft"] as const).map((k) => {
+                const to = better ? result.after[k] : result.before[k];
+                return (
+                  <div key={k} className="rounded-lg border border-line p-2">
+                    <div className="text-[10px] font-bold uppercase tracking-wide text-muted">{k === "gaps" ? "Coverage gaps" : k === "hard" ? "Rule breaks" : "Should fix"}</div>
+                    <div className="mt-1 font-display text-lg font-semibold tabular">
+                      {result.before[k]}{better ? <> <span className="text-muted">→</span> <span className={to < result.before[k] ? "text-ok" : to > result.before[k] ? "text-bad" : ""}>{to}</span></> : null}
+                    </div>
+                  </div>
+                );
               })}
-            </ul>
-          </details>
-        ) : null}
-        <div className="mt-5 flex items-center justify-end gap-2">
-          <Button variant="outline" onClick={onClose}>Cancel</Button>
-          <Button disabled={!result.edits.length || !better} onClick={() => { hub.setCells(result.edits, { source: "optimise", title: `Optimised ${teamLabel(team, hub.ds.airlines)} · week of ${formatDate(ws, { day: "numeric", month: "short" })}: ${result.edits.length} shift${result.edits.length > 1 ? "s" : ""}` }); onClose(); }}>
-            <Lock className="size-4" /> Apply {result.edits.length || ""} change{result.edits.length === 1 ? "" : "s"}
-          </Button>
-        </div>
+            </div>
+            {better ? (
+              <p className="mt-3 rounded-lg bg-ok-soft px-3 py-2 text-sm text-emerald-900"><CheckCircle2 className="mr-1 inline size-4 align-[-3px] text-ok" />A better week: <b>{result.edits.length} shift{result.edits.length > 1 ? "s" : ""}</b> change. You&apos;ll see them outlined on the roster, and you can undo.</p>
+            ) : (
+              <div className="mt-3 rounded-lg border border-line bg-surface px-3 py-2.5 text-sm">
+                <p className="font-semibold">No better arrangement for this week</p>
+                <p className="mt-0.5 text-xs text-muted">The engine tried {TRIES} times and couldn&apos;t beat the current roster{result.before.gaps ? " with this team alone" : ""}. Nothing has been changed.{result.before.gaps ? " The gaps need cover from another team or overtime: fix them one by one." : ""}</p>
+              </div>
+            )}
+            {result.notes.length ? (
+              <div className="mt-3 space-y-1.5">
+                <p className="text-xs font-semibold uppercase tracking-wide text-muted">What the engine can&apos;t cover</p>
+                {result.notes.map((n) => <p key={n} className="rounded-md bg-warn-soft px-2 py-1.5 text-xs text-amber-900">{n}</p>)}
+              </div>
+            ) : null}
+            {better ? (
+              <details className="mt-3 text-xs">
+                <summary className="cursor-pointer font-semibold text-brand-600">See the changes</summary>
+                <ul className="mt-2 max-h-40 space-y-0.5 overflow-y-auto">
+                  {result.edits.map((e) => (
+                    <li key={e.personId + e.date}>{personName(hub.people.get(e.personId))} · {formatDate(e.date)}: {SHIFT_LABEL[e.from]} → <span className="font-semibold">{SHIFT_LABEL[e.shift]}</span></li>
+                  ))}
+                </ul>
+              </details>
+            ) : null}
+          </>
+        )}
       </DialogContent>
     </Dialog>
   );
