@@ -211,10 +211,14 @@ export function generateDataset(today: string, nowMinutes: number, config: Datas
         destinationName: route.destName,
         aircraft: route.aircraft,
         std: route.std,
-        sta: fromMinutes(toMinutes(route.std) - route.turnMins),
+        sta: route.sta ?? (route.kind === "arrival" ? route.std : fromMinutes(toMinutes(route.std) - route.turnMins)),
         gate: route.gate,
         terminal: airline.terminal,
         paxBooked: Math.round(route.seats * (0.62 + fr.next() * 0.36)),
+        ...(route.kind ? { kind: route.kind } : {}),
+        ...(route.inboundNo ? { inboundNo: route.inboundNo, origin: route.origin, originName: route.originName } : {}),
+        ...(route.overnight ? { overnight: true } : {}),
+        ...(route.source ? { source: route.source } : {}),
       });
     }
   }
@@ -235,6 +239,8 @@ export function generateDataset(today: string, nowMinutes: number, config: Datas
       terminal: c.terminal,
       paxBooked: c.pax,
       adhoc: { id: c.id, operator: c.operator, status: c.status, ref: c.ref, notes: c.notes, source: c.source },
+      ...(c.kind ? { kind: c.kind } : {}),
+      ...(c.inboundNo ? { inboundNo: c.inboundNo, origin: c.origin, originName: c.originName } : {}),
     });
   }
   flights.sort((a, b) => (a.date + a.std).localeCompare(b.date + b.std));
@@ -375,6 +381,7 @@ export function generateDataset(today: string, nowMinutes: number, config: Datas
   const gateLogs: GateLog[] = [];
   for (const f of flights) {
     if (f.date > today) continue;
+    if (f.kind === "arrival") continue; // no gate log for flights that end here
     const airline = airlineBy.get(f.airline)!;
     const std = toMinutes(f.std);
     const isToday = f.date === today;

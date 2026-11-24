@@ -1,4 +1,4 @@
-import type { Airline, Flight, ShiftCode } from "./types";
+import { departsToday, effectiveStd, type Airline, type Flight, type ShiftCode } from "./types";
 import { toMinutes } from "./time";
 
 export interface ShiftDef {
@@ -25,14 +25,16 @@ export const GATE_TO_MIN = 10;
 
 /** Agents a single flight needs at minute t (counter phase or gate phase). */
 export function flightAgentNeedAt(f: Flight, a: Airline, t: number): number {
-  const std = toMinutes(f.std);
+  if (!departsToday(f)) return 0; // arrivals, cancellations and overnighted flights need no check-in or gate team
+  const std = toMinutes(effectiveStd(f));
   if (t >= std - COUNTER_OPEN_MIN && t < std - COUNTER_CLOSE_MIN) return a.sla.counter;
   if (t >= std - GATE_FROM_MIN && t < std + GATE_TO_MIN) return a.sla.gate + a.sla.jetBridge;
   return 0;
 }
 
 export function flightActiveAt(f: Flight, t: number): boolean {
-  const std = toMinutes(f.std);
+  if (!departsToday(f)) return false;
+  const std = toMinutes(effectiveStd(f));
   return t >= std - COUNTER_OPEN_MIN && t < std + GATE_TO_MIN;
 }
 

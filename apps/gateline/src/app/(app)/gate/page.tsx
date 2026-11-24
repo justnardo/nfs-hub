@@ -31,7 +31,7 @@ function GateList() {
   const entry = hub.ds.roster.find((r) => r.personId === me?.id && r.date === date);
   const [scope, setScope] = React.useState<"onteam" | "mine" | "all">(me?.role === "lead" ? "mine" : "all");
   const onTeam = (fid: string) => !!me && !!hub.logByFlight.get(fid)?.team.some((t) => t.personId === me.id);
-  const dayFlights = hub.ds.flights.filter((f) => f.date === date);
+  const dayFlights = hub.ds.flights.filter((f) => f.date === date && f.kind !== "arrival");
   const flights = dayFlights.filter((f) => (scope === "all" ? true : scope === "onteam" ? onTeam(f.id) : me?.trainedAirlines.includes(f.airline) ?? true));
   const airlines = new Map(hub.ds.airlines.map((a) => [a.code, a]));
   const isToday = date === hub.today;
@@ -43,7 +43,7 @@ function GateList() {
   const filed = logs.filter((g) => g.status === "filed");
   const onTime = filed.filter((g) => !g.delayMinutes).length;
   const issues = logs.reduce((n, g) => n + g.discrepancies.length, 0);
-  const unfiled = past ? flights.filter((f) => hub.logByFlight.get(f.id)?.status !== "filed") : [];
+  const unfiled = past ? flights.filter((f) => hub.logByFlight.get(f.id)?.status !== "filed" && (!f.ops || f.ops.status === "delayed" || !!hub.logByFlight.get(f.id))) : [];
   const shiftText = !entry || entry.shift === "O" ? "not rostered" : entry.shift === "V" ? "away" : `on the ${entry.shift === "E" ? "early" : entry.shift === "L" ? "late" : "mid"} shift${entry.time ? ` (${entry.time.replace("-", "–")})` : ""}`;
 
   return (

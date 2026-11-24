@@ -2,7 +2,7 @@
 import * as React from "react";
 import { ImageUp, Loader2, Sparkles, X } from "lucide-react";
 import { Button, Dialog, DialogContent, Input, Label, Select, Textarea, cn } from "@nfs/ui";
-import { timingsFor, type Airline, type AirlineTimings, type Terminal } from "@nfs/db";
+import { FLIGHT_KINDS, fromMinutes, timingsFor, toMinutes, type Airline, type AirlineTimings, type FlightKind, type Terminal } from "@nfs/db";
 import type { RouteTemplate } from "@nfs/demo";
 import { useHub } from "@/lib/store";
 
@@ -180,43 +180,107 @@ const DOW = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 export function RouteDialog({ airline, route, onClose }: { airline: Airline; route?: RouteTemplate; onClose: () => void }) {
   const hub = useHub();
   const [r, setR] = React.useState<RouteTemplate>(
-    () => route ?? { airline: airline.code, flightNo: `${airline.code} `, dest: "", destName: "", std: "10:00", turnMins: 60, aircraft: airline.aircraft[0] ?? "", gate: "", seats: 150 },
+    () => route ?? { airline: airline.code, flightNo: `${airline.code} `, dest: "", destName: "", std: "10:00", turnMins: 60, aircraft: airline.aircraft[0] ?? "", gate: "", seats: 150, kind: "turn", inboundNo: `${airline.code} `, origin: "", originName: "", sta: "09:00", source: "gateline" },
   );
+  const kind: FlightKind = r.kind ?? "turn";
   const days = r.days ?? [0, 1, 2, 3, 4, 5, 6];
   const isNew = !route;
-  const taken = isNew && hub.routes.some((x) => x.flightNo.replace(/\s/g, "") === r.flightNo.replace(/\s/g, ""));
-  const valid = r.flightNo.trim().length > airline.code.length && /^[A-Z]{3}$/.test(r.dest) && /^\d{2}:\d{2}$/.test(r.std) && days.length > 0 && !taken;
+  const key = (kind === "arrival" ? r.inboundNo ?? r.flightNo : r.flightNo).replace(/\s/g, "");
+  const taken = isNew && hub.routes.some((x) => x.flightNo.replace(/\s/g, "") === key);
+  const hasIn = kind !== "departure";
+  const hasOut = kind !== "arrival";
+  const sta = r.sta ?? fromMinutes(toMinutes(r.std) - r.turnMins);
+  const okNo = (n?: string) => !!n && n.trim().length > airline.code.length;
+  const valid =
+    days.length > 0 && !taken &&
+    (!hasOut || (okNo(r.flightNo) && /^[A-Z]{3}$/.test(r.dest) && /^\d{2}:\d{2}$/.test(r.std))) &&
+    (!hasIn || (okNo(r.inboundNo) && /^[A-Z]{3}$/.test(r.origin ?? "") && /^\d{2}:\d{2}$/.test(sta))) &&
+    (kind !== "turn" || r.overnight || toMinutes(sta) < toMinutes(r.std));
   const toggleDay = (d: number) => {
     const next = days.includes(d) ? days.filter((x) => x !== d) : [...days, d].sort();
     setR({ ...r, days: next.length === 7 ? undefined : next });
   };
+  const clean = (n?: string) => (n ?? "").trim().replace(/\s+/g, " ");
+  const save = () => {
+    const base = { ...r, kind, sta, source: r.source ?? "gateline" } as RouteTemplate;
+    let out: RouteTemplate;
+    if (kind === "arrival") {
+      out = { ...base, flightNo: clean(r.inboundNo), inboundNo: clean(r.inboundNo), std: sta, dest: "", destName: "", turnMins: 0, overnight: false };
+    } else if (kind === "departure") {
+      out = { ...base, flightNo: clean(r.flightNo), inboundNo: undefined, origin: undefined, originName: undefined, sta: undefined, turnMins: 60, overnight: false };
+    } else {
+      out = { ...base, flightNo: clean(r.flightNo), inboundNo: clean(r.inboundNo), turnMins: r.overnight ? 0 : toMinutes(r.std) - toMinutes(sta) };
+    }
+    hub.saveRoute(out);
+    onClose();
+  };
+  const title = isNew ? `Add ${airline.code} flight` : `Edit ${route.flightNo}`;
   return (
     <Dialog open onOpenChange={(v) => !v && onClose()}>
-      <DialogContent className="max-w-xl" title={isNew ? `Add ${airline.code} departure` : `Edit ${route.flightNo}`} description="Flights feed SLA demand: counter from 3h before departure, gate team from 1h before.">
+      <DialogContent className="max-w-2xl" title={title} description="Departures feed SLA demand: check-in from 3 h before, the gate team from 1 h before. Arrivals show on flight tracking.">
+        <p className="mb-1.5 text-xs font-semibold text-muted">Type</p>
+        <div className="mb-4 grid grid-cols-3 gap-1 rounded-xl bg-surface p-1">
+          {(Object.keys(FLIGHT_KINDS) as FlightKind[]).map((k) => (
+            <button
+              key={k}
+              type="button"
+              disabled={!isNew && k !== kind && (k === "arrival" || kind === "arrival")}
+              onClick={() => setR({ ...r, kind: k, inboundNo: r.inboundNo ?? `${airline.code} `, origin: r.origin ?? "", originName: r.originName ?? "", sta: r.sta ?? "09:00" })}
+              className={cn("h-9 cursor-pointer rounded-lg text-xs font-semibold transition-colors disabled:cursor-not-allowed disabled:opacity-40", kind === k ? "bg-card text-brand-700 shadow-sm" : "text-muted hover:text-brand-700")}
+            >
+              {FLIGHT_KINDS[k]}
+            </button>
+          ))}
+        </div>
+        {hasIn ? (
+          <fieldset className="mb-4 rounded-xl border border-line p-3">
+            <legend className="px-1 text-xs font-semibold text-brand-700">Inbound (arriving in Nassau)</legend>
+            <div className="grid gap-3 sm:grid-cols-4">
+              <Field label="Flight number"><Input value={r.inboundNo ?? ""} disabled={!isNew && kind === "arrival"} onChange={(e) => setR({ ...r, inboundNo: e.target.value.toUpperCase() })} /></Field>
+              <Field label="From (code)"><Input value={r.origin ?? ""} maxLength={3} onChange={(e) => setR({ ...r, origin: e.target.value.toUpperCase() })} placeholder="EWR" /></Field>
+              <Field label="From"><Input value={r.originName ?? ""} onChange={(e) => setR({ ...r, originName: e.target.value })} placeholder="Newark" /></Field>
+              <Field label="Arrival (STA)"><Input type="time" value={sta} onChange={(e) => setR({ ...r, sta: e.target.value })} /></Field>
+            </div>
+            {kind === "turn" ? (
+              <label className="mt-3 flex cursor-pointer items-center gap-2 text-sm">
+                <input type="checkbox" checked={!!r.overnight} onChange={(e) => setR({ ...r, overnight: e.target.checked })} className="size-4 accent-[var(--color-brand-500)]" />
+                Arrives the evening before and remains overnight (RON)
+              </label>
+            ) : null}
+          </fieldset>
+        ) : null}
+        {hasOut ? (
+          <fieldset className="mb-4 rounded-xl border border-line p-3">
+            <legend className="px-1 text-xs font-semibold text-brand-700">Outbound (departing Nassau)</legend>
+            <div className="grid gap-3 sm:grid-cols-4">
+              <Field label="Flight number"><Input value={r.flightNo} disabled={!isNew} onChange={(e) => setR({ ...r, flightNo: e.target.value.toUpperCase() })} /></Field>
+              <Field label="To (code)"><Input value={r.dest} maxLength={3} onChange={(e) => setR({ ...r, dest: e.target.value.toUpperCase() })} placeholder="MIA" /></Field>
+              <Field label="To"><Input value={r.destName} onChange={(e) => setR({ ...r, destName: e.target.value })} placeholder="Miami" /></Field>
+              <Field label="Departure (STD)"><Input type="time" value={r.std} onChange={(e) => setR({ ...r, std: e.target.value })} /></Field>
+            </div>
+          </fieldset>
+        ) : null}
         <div className="grid gap-3 sm:grid-cols-3">
-          <Field label="Flight number"><Input value={r.flightNo} disabled={!isNew} onChange={(e) => setR({ ...r, flightNo: e.target.value.toUpperCase() })} /></Field>
-          <Field label="Destination code"><Input value={r.dest} maxLength={3} onChange={(e) => setR({ ...r, dest: e.target.value.toUpperCase() })} placeholder="MIA" /></Field>
-          <Field label="Destination name"><Input value={r.destName} onChange={(e) => setR({ ...r, destName: e.target.value })} placeholder="Miami" /></Field>
-          <Field label="Departure (STD)"><Input type="time" value={r.std} onChange={(e) => setR({ ...r, std: e.target.value })} /></Field>
-          <Field label="Turn time (min)"><Input type="number" min={20} max={240} value={r.turnMins} onChange={(e) => setR({ ...r, turnMins: Number(e.target.value) || 60 })} /></Field>
           <Field label="Gate"><Input value={r.gate} onChange={(e) => setR({ ...r, gate: e.target.value.toUpperCase() })} /></Field>
           <Field label="Aircraft"><Input value={r.aircraft} onChange={(e) => setR({ ...r, aircraft: e.target.value })} /></Field>
           <Field label="Seats"><Input type="number" min={10} max={500} value={r.seats} onChange={(e) => setR({ ...r, seats: Number(e.target.value) || 100 })} /></Field>
         </div>
-        <p className="mt-4 text-xs font-semibold text-muted">Days operated</p>
+        <p className="mt-4 text-xs font-semibold text-muted">Days operated{kind === "turn" && r.overnight ? " (departure days)" : ""}</p>
         <div className="mt-1.5 flex flex-wrap gap-1.5">
           {DOW.map((d, i) => (
             <button key={d} type="button" onClick={() => toggleDay(i)} className={cn("h-9 w-12 rounded-lg border text-xs font-semibold transition-colors cursor-pointer", days.includes(i) ? "border-brand-500 bg-brand-50 text-brand-700" : "border-line text-muted hover:border-brand-400 hover:text-brand-700")}>{d}</button>
           ))}
         </div>
-        {taken ? <p className="mt-3 text-sm text-bad">{r.flightNo} is already scheduled.</p> : null}
+        {kind === "turn" && !r.overnight && toMinutes(sta) >= toMinutes(r.std) ? <p className="mt-3 text-sm text-bad">The arrival must be before the departure, or tick remains overnight.</p> : null}
+        {taken ? <p className="mt-3 text-sm text-bad">{key} is already scheduled.</p> : null}
+        <p className="mt-3 text-[11px] text-muted">Source: {r.source === "rampline" ? "Synced from Rampline" : r.source === "airline" ? "Synced from the airline's schedule" : "Entered in Gateline"}. Once Rampline or an airline schedule feed is connected, synced flights will update here automatically.</p>
         <div className="mt-5 flex justify-between gap-2">
           {!isNew ? (
             <Button variant="ghost" className="text-bad hover:bg-bad-soft hover:text-red-800" onClick={() => { hub.removeRoute(route.flightNo); onClose(); }}>Remove flight</Button>
           ) : <span />}
           <div className="flex gap-2">
             <Button variant="outline" onClick={onClose}>Cancel</Button>
-            <Button disabled={!valid} onClick={() => { hub.saveRoute({ ...r, flightNo: r.flightNo.trim().replace(/\s+/g, " ") }); onClose(); }}>{isNew ? "Add departure" : "Save"}</Button>
+            <Button disabled={!valid} onClick={save}>{isNew ? "Add flight" : "Save"}</Button>
           </div>
         </div>
       </DialogContent>

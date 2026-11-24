@@ -83,7 +83,7 @@ function Records() {
                   <Td className="hidden @5xl/main:table-cell tabular text-xs">{l.events.boarding_start}–{l.events.boarding_close}</Td>
                   <Td className="hidden @5xl/main:table-cell tabular">{l.events.door_close}</Td>
                   <Td className="tabular">{l.events.pushback}</Td>
-                  <Td>{l.delayMinutes === 0 ? <Badge tone="ok">On time</Badge> : <Badge tone={isNfsCause(l.delayCause) ? "warn" : "neutral"}>+{l.delayMinutes}m · {l.delayCause}</Badge>}</Td>
+                  <Td>{l.outcome === "cancelled" ? <Badge tone="bad">Cancelled · {l.closeout?.reason}</Badge> : l.outcome === "ron" ? <Badge tone="dark">RON · {l.closeout?.reason}</Badge> : l.delayMinutes === 0 ? <Badge tone="ok">On time</Badge> : <Badge tone={isNfsCause(l.delayCause) ? "warn" : "neutral"}>+{l.delayMinutes}m · {l.delayCause}</Badge>}</Td>
                   <Td>{l.discrepancies.length ? <Badge tone="gold">{l.discrepancies.length}</Badge> : <span className="text-xs text-muted">—</span>}</Td>
                 </Tr>
               );

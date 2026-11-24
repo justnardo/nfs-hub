@@ -13,7 +13,7 @@ import { CharterBadge } from "@/components/charter-dialog";
 import { TeamMembersDialog } from "@/components/staff-dialogs";
 import { Pagination, usePaged } from "@/components/pagination";
 import { Avatar, Badge, Button, Card, CardContent, CardDescription, CardHeader, CardTitle, PageHeader, Stat, Table, Td, Th, Tr, cn } from "@nfs/ui";
-import { addDays, formatDate } from "@nfs/db";
+import { addDays, formatDate, fromMinutes, toMinutes } from "@nfs/db";
 import { eligibleFor, expiringSoon } from "@nfs/rules";
 import { useHub, personName } from "@/lib/store";
 import { RequirePerm } from "@/components/guard";
@@ -184,25 +184,37 @@ function AirlineProfile() {
         ) : (
         <Card>
           <CardHeader>
-            <div><CardTitle>Flight schedule</CardTitle><CardDescription>Feeds SLA demand for rosters and coverage</CardDescription></div>
-            {manage ? <Button variant="secondary" size="sm" onClick={() => setRoute("new")}><Plus /> Add departure</Button> : null}
+            <div><CardTitle>Flight schedule</CardTitle><CardDescription>Arrivals and departures; departures feed SLA demand for rosters and coverage</CardDescription></div>
+            {manage ? <Button variant="secondary" size="sm" onClick={() => setRoute("new")}><Plus /> Add flight</Button> : null}
           </CardHeader>
           <CardContent className="px-2 sm:px-5">
-            {routes.length === 0 ? <p className="px-2 text-sm text-muted">No departures scheduled yet{manage ? " — add the first one" : ""}.</p> : null}
+            {routes.length === 0 ? <p className="px-2 text-sm text-muted">No flights scheduled yet{manage ? " — add the first one" : ""}.</p> : null}
             <Table>
-              <thead><tr><Th>Flight</Th><Th>To</Th><Th>STD</Th><Th className="hidden @lg/tbl:table-cell">Days</Th><Th className="hidden @lg/tbl:table-cell">Aircraft</Th><Th>Gate</Th>{manage ? <Th /> : null}</tr></thead>
+              <thead><tr><Th>Type</Th><Th>Inbound</Th><Th>Outbound</Th><Th className="hidden @lg/tbl:table-cell">Days</Th><Th className="hidden @lg/tbl:table-cell">Aircraft</Th><Th>Gate</Th>{manage ? <Th /> : null}</tr></thead>
               <tbody>
-                {routes.map((r) => (
+                {routes.map((r) => {
+                  const kind = r.kind ?? "turn";
+                  const sta = r.sta ?? (kind === "arrival" ? r.std : fromMinutes(toMinutes(r.std) - r.turnMins));
+                  return (
                   <Tr key={r.flightNo}>
-                    <Td className="font-semibold">{r.flightNo}</Td>
-                    <Td>{r.destName} <span className="text-xs text-muted">{r.dest}</span></Td>
-                    <Td className="tabular">{r.std}</Td>
+                    <Td><Badge tone={kind === "arrival" ? "brand" : kind === "departure" ? "neutral" : "dark"}>{kind === "turn" ? (r.overnight ? "Turn · RON" : "Turn") : kind === "arrival" ? "Arrival" : "Departure"}</Badge></Td>
+                    <Td className="text-sm">
+                      {kind === "departure" ? <span className="text-muted">—</span> : (
+                        <><span className="font-semibold">{r.inboundNo ?? (kind === "arrival" ? r.flightNo : "Inbound")}</span>{r.origin ? <span className="text-xs text-muted"> from {r.origin}</span> : null}<span className="block text-xs text-muted tabular">Arr {sta}{r.overnight ? " (day before)" : ""}</span></>
+                      )}
+                    </Td>
+                    <Td className="text-sm">
+                      {kind === "arrival" ? <span className="text-muted">Ends here</span> : (
+                        <><span className="font-semibold">{r.flightNo}</span> <span className="text-xs text-muted">to {r.dest}</span><span className="block text-xs text-muted tabular">Dep {r.std}</span></>
+                      )}
+                    </Td>
                     <Td className="hidden @lg/tbl:table-cell text-xs">{r.days ? r.days.map((d) => DOW[d]).join(" ") : "Daily"}</Td>
                     <Td className="hidden @lg/tbl:table-cell">{r.aircraft}</Td>
                     <Td>{r.gate}</Td>
                     {manage ? <Td><Button variant="ghost" size="icon" onClick={() => setRoute(r)} aria-label={`Edit ${r.flightNo}`}><Pencil /></Button></Td> : null}
                   </Tr>
-                ))}
+                  );
+                })}
               </tbody>
             </Table>
           </CardContent>

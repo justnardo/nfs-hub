@@ -125,7 +125,7 @@ function FlightRow({ g, right, sub }: { g: GateLog; right?: React.ReactNode; sub
 /* ---------------- Departures ---------------- */
 function Departures() {
   const hub = useHub();
-  const rows = hub.ds.flights.filter((f) => f.date === hub.today).map((f) => {
+  const rows = hub.ds.flights.filter((f) => f.date === hub.today && f.kind !== "arrival").map((f) => {
     const log = hub.logByFlight.get(f.id);
     return { f, log, st: deriveStatus(f, log, hub.today, hub.nowMin, timingsFor(hub.ds.airlines.find((a) => a.code === f.airline))).status };
   });

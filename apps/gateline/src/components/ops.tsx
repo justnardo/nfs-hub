@@ -46,6 +46,9 @@ const STATUS_TONE: Record<FlightStatus, "neutral" | "brand" | "ok" | "warn" | "b
   Departed: "ok",
   Delayed: "bad",
   Cancelled: "bad",
+  "Remain overnight": "dark",
+  Arriving: "brand",
+  Arrived: "ok",
 };
 export function FlightStatusBadge({ status }: { status: FlightStatus }) {
   return <Badge tone={STATUS_TONE[status]}>{status}</Badge>;

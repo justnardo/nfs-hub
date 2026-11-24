@@ -2,7 +2,7 @@
  * Coverage in 15-minute slots: flight demand (counter phase, then gate + jet bridge phase) against
  * trained agents on duty. Agents helping another airline count there, not for their own team.
  */
-import { SHIFTS, flightActiveAt, flightAgentNeedAt, rangeDays, toMinutes, type Airline, type Flight, type Person, type Reassignment, type RosterEntry, type ShiftCode } from "@nfs/db";
+import { SHIFTS, effectiveStd, flightActiveAt, flightAgentNeedAt, rangeDays, toMinutes, type Airline, type Flight, type Person, type Reassignment, type RosterEntry, type ShiftCode } from "@nfs/db";
 import { SLOTS, SLOT_MIN, isWork, spanOf } from "./shifts";
 import { eligibleFor } from "./eligibility";
 
@@ -258,7 +258,7 @@ export function cellFromDay(dc: DayCoverage, shift: "E" | "L", ctx: CoverageCont
     flightIds: dc.flightIds.filter((id) => {
       const f = ctx.input.flights.find((x) => x.id === id);
       if (!f) return false;
-      const stdSlot = toMinutes(f.std);
+      const stdSlot = toMinutes(effectiveStd(f));
       return shift === "E" ? stdSlot - 60 < toMinutes(SHIFTS.E.demandTo) : stdSlot + 10 > toMinutes(SHIFTS.L.demandFrom);
     }),
     gaps: dc.gaps.filter((g) => g.shift === shift),

@@ -1,4 +1,4 @@
-import { ENABLED_STATIONS, type Airline, type RosterLine } from "@nfs/db";
+import { ENABLED_STATIONS, type Airline, type FlightKind, type RosterLine } from "@nfs/db";
 
 /** Airline marks uploaded in Rampline (public bucket), reused so both modules show the same logos. */
 export const RAMPLINE_MARKS = "https://cajatvbkaltwxtywpsjp.supabase.co/storage/v1/object/public/airline-marks";
@@ -245,6 +245,18 @@ export interface RouteTemplate {
   /** days of week operated (0 = Sun); undefined = daily */
   days?: number[];
   seats: number;
+  /** Missing = turnaround. For arrival-only flights, std holds the arrival time. */
+  kind?: FlightKind;
+  /** Inbound leg (turnarounds and arrivals). */
+  inboundNo?: string;
+  origin?: string;
+  originName?: string;
+  /** Scheduled arrival; when missing it's std minus turnMins. */
+  sta?: string;
+  /** The inbound lands the evening before and the aircraft remains overnight. */
+  overnight?: boolean;
+  /** Entered in Gateline, or synced from Rampline / the airline (future). */
+  source?: "gateline" | "rampline" | "airline";
 }
 
 export const ROUTES: RouteTemplate[] = [
@@ -303,6 +315,11 @@ export interface Charter {
   source: "gateline" | "rampline";
   createdBy?: string;
   createdAt?: string;
+  /** Missing = turnaround (charters usually depart only). */
+  kind?: FlightKind;
+  inboundNo?: string;
+  origin?: string;
+  originName?: string;
 }
 
 /** Demo charters, placed relative to today so there is always one recent and one coming up. */

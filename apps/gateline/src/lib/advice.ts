@@ -1,3 +1,4 @@
+import type { FlightOps } from "@nfs/db";
 import type { Flight, SsrCode, SsrItem } from "@nfs/db";
 import { rng } from "@nfs/demo";
 
@@ -12,6 +13,8 @@ export interface FlightAdvice {
   gateReason?: string;
   /** Passenger services acknowledgements of inbound alerts, by alert id. */
   alertAcks?: Record<string, { by: string; at: string }>;
+  /** Day-of change: cancelled, delayed or remain overnight. */
+  ops?: FlightOps;
 }
 
 export const INBOUND_CATEGORIES = ["Medical emergency", "Extra wheelchairs", "Unruly passenger", "Deportee / escort", "Inbound delay", "Diversion", "Other"] as const;

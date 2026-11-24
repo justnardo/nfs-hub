@@ -30,7 +30,7 @@ function Today() {
   const [detail, setDetail] = React.useState<TodayDetailKind | null>(null);
   const due = React.useMemo(() => trainingDue(hub.ds.people, hub.today), [hub.ds.people, hub.today]);
   const airlines = React.useMemo(() => new Map(hub.ds.airlines.map((a) => [a.code, a])), [hub.ds]);
-  const flights = hub.ds.flights.filter((f) => f.date === hub.today);
+  const flights = hub.ds.flights.filter((f) => f.date === hub.today && f.kind !== "arrival");
   const statuses = flights.map((f) => ({ f, s: deriveStatus(f, hub.logByFlight.get(f.id), hub.today, hub.nowMin, timingsFor(hub.ds.airlines.find((a) => a.code === f.airline))), log: hub.logByFlight.get(f.id) }));
   const todayLogs = hub.gateLogs.filter((g) => g.date === hub.today);
   const sum = summarise(todayLogs, airlines);

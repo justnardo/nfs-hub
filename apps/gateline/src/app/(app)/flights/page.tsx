@@ -14,6 +14,7 @@ import { RequirePerm } from "@/components/guard";
 import { AirlineChip, FlightStatusBadge, PersonLink } from "@/components/ops";
 import { DatePicker } from "@/components/date-picker";
 import { CharterBadge, CharterDialog } from "@/components/charter-dialog";
+import { FlightOpsButton } from "@/components/flight-ops";
 
 export default function FlightsPage() {
   return (
@@ -62,15 +63,15 @@ function Flights() {
     <>
       <PageHeader
         eyebrow="Flight tracking"
-        title="Above-the-wing departures"
-        description="US Departures and International terminals. Status comes from gate logs as leads tap, shared with Rampline."
+        title="Arrivals and departures"
+        description="Status comes from gate logs as leads tap, shared with Rampline. Duty staff can cancel, delay or keep a flight overnight from the clock button on each row."
         actions={
           <div className="flex flex-wrap items-center gap-1.5">
             <Button variant="outline" size="icon" disabled={date <= min} onClick={() => setDate(addDays(date, -1))} aria-label="Previous day"><ChevronLeft /></Button>
             <DatePicker value={date} onChange={setDate} min={min} max={max} today={hub.today} marks={charterDays} />
             <Button variant="outline" size="icon" disabled={date >= max} onClick={() => setDate(addDays(date, 1))} aria-label="Next day"><ChevronRight /></Button>
             {date !== hub.today ? <Button variant="secondary" size="sm" onClick={() => setDate(hub.today)}>Today</Button> : null}
-            {manage ? <Button size="sm" onClick={() => setCharter("new")} className="ml-1"><Plus /> Add charter</Button> : null}
+            {manage ? <Button size="sm" onClick={() => setCharter("new")} className="ml-1"><Plus /> Add one-off flight</Button> : null}
           </div>
         }
       />
@@ -89,26 +90,29 @@ function Flights() {
       </Card>
 
       {(hub.station === "NAS" ? (["US", "INTL"] as Terminal[]) : (["INTL"] as Terminal[])).map((t) => {
-        const list = flights.filter((f) => f.terminal === t);
+        const list = flights.filter((f) => f.terminal === t && f.kind !== "arrival");
+        const arrivals = flights.filter((f) => f.terminal === t && (f.kind === "arrival" || (f.inboundNo && !f.overnight && !f.ronOf)));
         return (
           <Card key={t} className="mb-5">
-            <CardHeader><div><CardTitle>{hub.station !== "NAS" ? `${stationBy(hub.station).airport}` : t === "US" ? "US Departures Terminal" : "International Terminal"}</CardTitle><CardDescription>{list.length} departures{list.some((f) => f.adhoc) ? ` · ${list.filter((f) => f.adhoc).length} charter` : ""}</CardDescription></div></CardHeader>
+            <CardHeader><div><CardTitle>{hub.station !== "NAS" ? `${stationBy(hub.station).airport}` : t === "US" ? "US Departures Terminal" : "International Terminal"}</CardTitle><CardDescription>{list.length} departure{list.length === 1 ? "" : "s"}{arrivals.length ? ` · ${arrivals.length} arrival${arrivals.length === 1 ? "" : "s"} listed` : ""}{list.some((f) => f.adhoc) ? ` · ${list.filter((f) => f.adhoc).length} one-off` : ""}{list.some((f) => f.ops?.status === "cancelled") ? ` · ${list.filter((f) => f.ops?.status === "cancelled").length} cancelled` : ""}</CardDescription></div></CardHeader>
             <CardContent className="px-2 sm:px-5">
               {list.length === 0 ? <p className="px-2 pb-2 text-sm text-muted">No departures from this terminal on {formatDate(date)}.</p> : (
                 <Table>
-                  <thead><tr><Th>Flight</Th><Th>Destination</Th><Th className="hidden @5xl/main:table-cell">Aircraft</Th><Th className="hidden @4xl/main:table-cell">Inbound STA</Th><Th>STD</Th><Th>Gate</Th><Th className="hidden @4xl/main:table-cell">Lead</Th><Th className="hidden @5xl/main:table-cell">Pax</Th><Th>Status</Th></tr></thead>
+                  <thead><tr><Th>Flight</Th><Th>Destination</Th><Th className="hidden @5xl/main:table-cell">Aircraft</Th><Th className="hidden @4xl/main:table-cell">Inbound STA</Th><Th>STD</Th><Th>Gate</Th><Th className="hidden @4xl/main:table-cell">Lead</Th><Th className="hidden @5xl/main:table-cell">Pax</Th><Th>Status</Th>{manage ? <Th /> : null}</tr></thead>
                   <tbody>
                     {list.map((f) => {
                       const log = hub.logByFlight.get(f.id);
                       const s = deriveStatus(f, log, hub.today, hub.nowMin, timingsFor(hub.ds.airlines.find((a) => a.code === f.airline)));
                       const ch = f.adhoc ? hub.charters.find((c) => c.id === f.adhoc!.id) : undefined;
                       return (
-                        <Tr key={f.id} id={`flight-${f.id}`} className={cn(focus === f.id && "bg-gold-100/60")}>
+                        <Tr key={f.id} id={`flight-${f.id}`} className={cn(focus === f.id && "bg-gold-100/60", (f.ops?.status === "cancelled" || f.ops?.status === "ron") && "bg-surface/70")}>
                           <Td>
-                            <Link href={log?.status === "filed" ? `/records/${log.id}` : `/gate/${f.id}`} className="flex items-center gap-2 whitespace-nowrap font-semibold transition-colors hover:text-brand-600"><AirlineChip airline={map.get(f.airline)!} />{f.flightNo}{hub.alertsFor(f.id).length ? <Siren aria-label="Inbound alert from Rampline" className="size-4 shrink-0 text-bad" /> : null}</Link>
+                            <Link href={log?.status === "filed" ? `/records/${log.id}` : `/gate/${f.id}`} className="flex items-center gap-2 whitespace-nowrap font-semibold transition-colors hover:text-brand-600"><AirlineChip airline={map.get(f.airline)!} /><span className={cn(f.ops?.status === "cancelled" && "line-through decoration-2 opacity-70")}>{f.flightNo}</span>{hub.alertsFor(f.id).length ? <Siren aria-label="Inbound alert from Rampline" className="size-4 shrink-0 text-bad" /> : null}</Link>
                           </Td>
                           <Td>
                             {f.destinationName} <span className="text-xs text-muted">{f.destination}</span>
+                            {f.ronOf ? <div className="mt-0.5 text-xs text-muted">Remained overnight · continues {f.flightNo} from {formatDate(addDays(f.date, -1))}</div> : null}
+                            {f.ops ? <div className={cn("mt-0.5 text-xs", f.ops.status === "cancelled" ? "text-bad" : "text-amber-700")}>{f.ops.status === "cancelled" ? "Cancelled" : f.ops.status === "delayed" ? `Delayed to ${f.ops.newStd}` : `RON · departs ${f.ops.newDate ? formatDate(f.ops.newDate) : "later"} ${f.ops.newStd ?? ""}`} · {f.ops.reason}</div> : null}
                             {f.adhoc ? (
                               <div className="mt-0.5 flex flex-wrap items-center gap-1.5 text-xs text-muted">
                                 <CharterBadge status={f.adhoc.status} />
@@ -118,18 +122,45 @@ function Flights() {
                             ) : null}
                           </Td>
                           <Td className="hidden @5xl/main:table-cell text-xs">{f.aircraft}</Td>
-                          <Td className="hidden @4xl/main:table-cell tabular">{log?.events.door_open ? <span title="Door open logged">{f.sta} <span className="text-xs text-muted">· door {log.events.door_open}</span></span> : f.sta}</Td>
-                          <Td className="tabular font-semibold">{f.std}</Td>
+                          <Td className="hidden @4xl/main:table-cell tabular">
+                            {log?.events.door_open ? <span title="Door open logged">{f.sta} <span className="text-xs text-muted">· door {log.events.door_open}</span></span> : f.kind === "departure" ? <span className="text-xs text-muted">Originates</span> : f.sta}
+                            {f.inboundNo ? <span className="block text-[11px] text-muted">{f.inboundNo}{f.origin ? ` from ${f.origin}` : ""}{f.overnight ? " · RON" : ""}</span> : f.overnight ? <span className="block text-[11px] text-muted">RON</span> : null}
+                          </Td>
+                          <Td className="tabular font-semibold">{f.ops?.status === "delayed" && f.ops.newStd ? <><span className="text-xs font-normal text-muted line-through">{f.std}</span> <span className="text-bad">{f.ops.newStd}</span></> : f.std}</Td>
                           <Td className="tabular">{f.gateFrom ? <span title={`Gate changed from ${f.gateFrom}`} className="inline-flex items-center gap-1 rounded-md bg-gold-100 px-1.5 py-0.5 font-semibold text-gold-700">{f.gate}<span className="text-[10px] font-medium line-through opacity-70">{f.gateFrom}</span></span> : f.gate}</Td>
                           <Td className="hidden @4xl/main:table-cell text-xs">{log ? <PersonLink p={hub.people.get(log.leadId)} /> : "—"}</Td>
                           <Td className="hidden @5xl/main:table-cell tabular text-xs">{log?.paxBoarded ?? "—"}/{log?.paxBooked ?? (f.adhoc ? f.paxBooked : "—")}</Td>
                           <Td><div className="flex items-center gap-1.5"><FlightStatusBadge status={s.status} />{log && log.delayMinutes > 0 ? <span className="text-[11px] font-semibold text-bad">+{log.delayMinutes}m</span> : null}</div></Td>
+                          {manage ? <Td>{f.date >= hub.today ? <FlightOpsButton flight={f} /> : null}</Td> : null}
                         </Tr>
                       );
                     })}
                   </tbody>
                 </Table>
               )}
+              {arrivals.length ? (
+                <div className="mt-4">
+                  <p className="mb-1 px-2 text-xs font-semibold tracking-wide text-muted uppercase">Arrivals</p>
+                  <Table>
+                    <thead><tr><Th>Flight</Th><Th>From</Th><Th>STA</Th><Th>Gate</Th><Th>Then</Th><Th>Status</Th></tr></thead>
+                    <tbody>
+                      {arrivals.map((f) => {
+                        const s = deriveStatus({ ...f, kind: "arrival", ops: f.kind === "arrival" ? f.ops : undefined }, undefined, hub.today, hub.nowMin);
+                        return (
+                          <Tr key={`arr-${f.id}`}>
+                            <Td className="whitespace-nowrap font-semibold"><span className="flex items-center gap-2"><AirlineChip airline={map.get(f.airline)!} />{f.inboundNo ?? f.flightNo}</span></Td>
+                            <Td>{f.originName || "—"} <span className="text-xs text-muted">{f.origin}</span></Td>
+                            <Td className="tabular font-semibold">{f.sta}</Td>
+                            <Td className="tabular">{f.gate}</Td>
+                            <Td className="text-xs text-muted">{f.kind === "arrival" ? "Ends here" : `Departs as ${f.flightNo} ${f.ops?.status === "delayed" ? f.ops.newStd : f.std}`}</Td>
+                            <Td><FlightStatusBadge status={s.status} /></Td>
+                          </Tr>
+                        );
+                      })}
+                    </tbody>
+                  </Table>
+                </div>
+              ) : null}
             </CardContent>
           </Card>
         );
@@ -154,7 +185,7 @@ function Flights() {
       <Card>
         <CardHeader>
           <div><CardTitle>Charters and ad-hoc flights · next 30 days</CardTitle><CardDescription>One-off flights outside the schedule. Gold dots on the calendar mark charter days.</CardDescription></div>
-          {manage ? <Button variant="secondary" size="sm" onClick={() => setCharter("new")}><Plus /> Add charter</Button> : null}
+          {manage ? <Button variant="secondary" size="sm" onClick={() => setCharter("new")}><Plus /> Add one-off flight</Button> : null}
         </CardHeader>
         <CardContent className="px-2 sm:px-5">
           {upcoming.length === 0 ? <p className="px-2 pb-2 text-sm text-muted">No charters booked in the next 30 days.</p> : (

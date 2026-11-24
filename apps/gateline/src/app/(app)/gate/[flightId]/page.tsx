@@ -15,6 +15,8 @@ import { deriveStatus } from "@nfs/flights";
 import { useHub, personName } from "@/lib/store";
 import { RequirePerm } from "@/components/guard";
 import { AirlineChip, FlightStatusBadge } from "@/components/ops";
+import { GateCloseout } from "@/components/gate-closeout";
+import { FlightOpsButton } from "@/components/flight-ops";
 import { SSR_CODES, SSR_LABEL, WHEELCHAIR } from "@/lib/advice";
 import { can } from "@nfs/auth";
 
@@ -103,6 +105,9 @@ function GateLogScreen() {
   });
 
   if (!flight) return <p className="text-sm text-muted">Flight not found.</p>;
+  if (flight.kind === "arrival") return <p className="text-sm text-muted">{flight.flightNo} is an arrival only: there's no departure gate log.</p>;
+  // Cancelled or overnighted: close-out instead of the departure log
+  if (flight.ops?.status === "cancelled" || flight.ops?.status === "ron") return <GateCloseout flight={flight} log={hub.logByFlight.get(flight.id)} />;
   const airline = hub.ds.airlines.find((a) => a.code === flight.airline)!;
   const shift = shiftForStd(flight.std);
   const existing = hub.logByFlight.get(flight.id);
@@ -200,8 +205,17 @@ function GateLogScreen() {
     <div className="mx-auto max-w-md pb-6">
       <div className="mb-3 flex items-center justify-between">
         <Button variant="ghost" size="sm" asChild><Link href="/gate"><ArrowLeft /> Flights</Link></Button>
-        {hub.offline ? <Badge tone="warn"><CloudOff className="size-3" /> Saved on this phone · syncs on reconnect</Badge> : <Badge tone="ok">Live sync</Badge>}
+        <div className="flex items-center gap-1.5">
+          {can(hub.session?.role, "roster.edit") && !filed ? <FlightOpsButton flight={flight} /> : null}
+          {hub.offline ? <Badge tone="warn"><CloudOff className="size-3" /> Saved on this phone · syncs on reconnect</Badge> : <Badge tone="ok">Live sync</Badge>}
+        </div>
       </div>
+      {flight.ops?.status === "delayed" ? (
+        <Card className="mb-3 border-amber-200 bg-warn-soft p-3 text-sm text-amber-900">
+          <p className="font-semibold">Delayed to {flight.ops.newStd} · {flight.ops.reason}</p>
+          <p className="text-xs">Log times as they happen. The delay is measured against the scheduled {flight.std}.</p>
+        </Card>
+      ) : null}
 
       {filed ? (
         <Card className="mb-3 flex items-center gap-3 border-green-200 bg-ok-soft p-3.5">

@@ -109,6 +109,24 @@ export interface Person {
   leaving?: { reason: string; hrContact: string; hrRef?: string; recordedBy: string; at: string };
 }
 
+/** turn: arrives and departs the same visit · departure: originates here · arrival: terminates here. */
+export type FlightKind = "turn" | "departure" | "arrival";
+export const FLIGHT_KINDS: Record<FlightKind, string> = { turn: "Turnaround", departure: "Departure only", arrival: "Arrival only" };
+
+/** Day-of change to one flight, set by duty staff (later also synced from Rampline or the airline). */
+export interface FlightOps {
+  status: "cancelled" | "delayed" | "ron";
+  reason: string;
+  note?: string;
+  /** Delayed: new departure time. RON: departure time on the new date. */
+  newStd?: string;
+  /** RON: the date the aircraft now departs. */
+  newDate?: string;
+  by: string;
+  at: string;
+}
+export const OPS_REASONS = ["Weather", "Aircraft technical", "Crew", "ATC / airport", "Airline operations", "Security", "Late inbound", "Other"] as const;
+
 export interface Flight {
   id: string;
   date: string; // YYYY-MM-DD (Nassau local)
@@ -126,7 +144,26 @@ export interface Flight {
   adhoc?: AdhocInfo;
   /** Set when the gate was changed: the gate it was moved from. */
   gateFrom?: string;
+  /** Missing means a turnaround (the seeded schedule). */
+  kind?: FlightKind;
+  /** Inbound leg: flight number, where it comes from. sta above is its arrival time. */
+  inboundNo?: string;
+  origin?: string;
+  originName?: string;
+  /** The inbound arrives the evening before (scheduled remain-overnight). */
+  overnight?: boolean;
+  /** Cancelled, delayed or kept overnight today. */
+  ops?: FlightOps;
+  /** This departure is the continuation of a flight that remained overnight (its id). */
+  ronOf?: string;
+  /** Where the flight came from: entered in Gateline, or synced from Rampline / the airline. */
+  source?: "gateline" | "rampline" | "airline";
 }
+
+/** Does this flight leave from here today? (Arrival-only, cancelled and overnighted flights don't.) */
+export const departsToday = (f: Flight) => f.kind !== "arrival" && f.ops?.status !== "cancelled" && f.ops?.status !== "ron";
+/** The departure time to plan against: the delayed time when there is one. */
+export const effectiveStd = (f: Flight) => (f.ops?.status === "delayed" && f.ops.newStd ? f.ops.newStd : f.std);
 
 /** Special service request codes (IATA SSR) handled above the wing. */
 export type SsrCode = "WCHR" | "WCHS" | "WCHC" | "UMNR" | "MEDA" | "BLND" | "DEAF" | "DPNA" | "PETC" | "MAAS";
@@ -166,7 +203,10 @@ export type FlightStatus =
   | "Door closed"
   | "Departed"
   | "Delayed"
-  | "Cancelled";
+  | "Cancelled"
+  | "Remain overnight"
+  | "Arriving"
+  | "Arrived";
 
 export type GateEventType =
   | "door_open"
@@ -267,7 +307,22 @@ export interface GateLog {
   status: "open" | "filed";
   filedAt: string | null;
   source: "seed" | "device";
+  /** Missing means the flight operated. Cancelled and RON records are kept out of on-time figures. */
+  outcome?: "operated" | "cancelled" | "ron";
+  closeout?: GateCloseout;
 }
+
+/** What the lead recorded when a flight was cancelled or kept overnight after passenger work had begun. */
+export interface GateCloseout {
+  reason: string;
+  /** When the lead was told (HH:mm). */
+  advisedAt: string;
+  paxCheckedIn: number | null;
+  /** What happened to the passengers. */
+  handling: string[];
+  note: string;
+}
+export const CLOSEOUT_HANDLING = ["Rebooked on another flight", "Hotel provided", "Meal vouchers", "Bags returned to passengers", "Bags held airside", "Sent back landside", "Airline handled rebooking"] as const;
 
 export interface RosterEntry {
   personId: string;

@@ -3,7 +3,7 @@ import * as React from "react";
 import Link from "next/link";
 import { useParams } from "next/navigation";
 import { ArrowLeft, Camera, Check, Link2, Printer } from "lucide-react";
-import { Avatar, Badge, Button, Card, CardContent, CardHeader, CardTitle } from "@nfs/ui";
+import { Avatar, Badge, Button, Card, CardContent, CardHeader, CardTitle , cn } from "@nfs/ui";
 import { GATE_EVENT_LABEL, GATE_EVENT_ORDER, formatDate, toMinutes, type TeamPosition } from "@nfs/db";
 import { useHub, personName } from "@/lib/store";
 import { RequirePerm } from "@/components/guard";
@@ -63,12 +63,24 @@ function Record() {
             <p className="text-[11px] font-bold uppercase tracking-wide text-muted">Flight record</p>
             <p className="font-mono text-xs text-muted">{log.id}</p>
             <div className="mt-2 flex justify-end gap-1.5">
-              {log.delayMinutes === 0 ? <Badge tone="ok">On time</Badge> : <Badge tone={isNfsCause(log.delayCause) ? "warn" : "neutral"}>+{log.delayMinutes} min · {log.delayCause}</Badge>}
+              {log.outcome === "cancelled" || log.outcome === "ron" ? (
+                <Badge tone={log.outcome === "ron" ? "dark" : "bad"}>{log.outcome === "ron" ? "Remained overnight" : "Cancelled"} · {log.closeout?.reason}</Badge>
+              ) : log.delayMinutes === 0 ? <Badge tone="ok">On time</Badge> : <Badge tone={isNfsCause(log.delayCause) ? "warn" : "neutral"}>+{log.delayMinutes} min · {log.delayCause}</Badge>}
               <Badge tone={sla ? "ok" : "warn"}>{sla ? "Team met SLA" : `Short: ${teamShortfall(log, a).join(", ")}`}</Badge>
             </div>
           </div>
         </div>
 
+        {log.closeout ? (
+          <div className={cn("border-b border-line px-6 py-4 text-sm", log.outcome === "ron" ? "bg-surface" : "bg-bad-soft/50")}>
+            <p className="font-semibold">{log.outcome === "ron" ? "Remained overnight" : "Cancelled"}: {log.closeout.reason}</p>
+            <p className="mt-0.5 text-muted">
+              Lead told at {log.closeout.advisedAt} · {log.closeout.paxCheckedIn ?? "no"} passengers checked in · {log.closeout.handling.join(", ") || "no handling recorded"}
+            </p>
+            {log.closeout.note ? <p className="mt-1">{log.closeout.note}</p> : null}
+            <p className="mt-1 text-xs text-muted">Kept on record; not counted in on-time figures.</p>
+          </div>
+        ) : null}
         <div className="grid gap-6 p-6 @2xl/main:grid-cols-2">
           <div>
             <h3 className="mb-3 text-sm font-semibold">Timeline <span className="font-normal text-muted">· STD {f.std}</span></h3>

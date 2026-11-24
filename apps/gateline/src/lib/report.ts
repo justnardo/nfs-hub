@@ -1,7 +1,7 @@
 import { addDays, rangeDays, type Airline, type DelayCause, type DiscrepancyType, type FeedbackItem, type Flight, type GateLog, type Person, type Reassignment } from "@nfs/db";
 import { coverageGrid, type EngineInput } from "@nfs/rules";
 import type { Absence } from "./absence";
-import { boardingMinutes, isNfsCause, slaMet, summarise, type Summary } from "./metrics";
+import { boardingMinutes, isNfsCause, slaMet, summarise, type Summary, operated } from "./metrics";
 
 export interface ReportInput {
   from: string;
@@ -55,7 +55,7 @@ export function buildReport(r: ReportInput): Report {
     const a = airlineBy.get(code);
     return !!a && (!r.terminal || a.terminal === r.terminal) && (!r.airline || a.code === r.airline);
   };
-  const filed = (from: string, to: string) => r.logs.filter((l) => l.status === "filed" && l.date >= from && l.date <= to && inScope(l.airline));
+  const filed = (from: string, to: string) => r.logs.filter((l) => l.status === "filed" && operated(l) && l.date >= from && l.date <= to && inScope(l.airline));
   const logs = filed(r.from, r.to);
   const prevLogs = filed(addDays(r.from, -span), addDays(r.from, -1));
   const summary = summarise(logs, airlineBy);
@@ -163,7 +163,7 @@ export function reportCsv(rep: Report, logs: GateLog[], flights: Flight[], peopl
   const fl = new Map(flights.map((f) => [f.id, f]));
   const head = ["Date", "Flight", "Airline", "Destination", "STD", "Lead", "Door close", "Pushback", "Delay min", "Cause", "NFS cause", "Booked", "Checked in", "Boarded", "Wheelchairs", "Boarding min", "Discrepancies"];
   const rows = logs
-    .filter((l) => l.status === "filed" && l.date >= rep.from && l.date <= rep.to)
+    .filter((l) => l.status === "filed" && operated(l) && l.date >= rep.from && l.date <= rep.to)
     .map((l) => {
       const f = fl.get(l.flightId);
       const lead = people.get(l.leadId);

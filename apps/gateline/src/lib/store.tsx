@@ -1,7 +1,7 @@
 "use client";
 import * as React from "react";
 import {
-  STATIONS, addDays, formatDate, nassauNow, stationOf, type Airline, type Station, type FeedbackItem, type GateEventType, type GateLog, type HubEvent, type Person,
+  STATIONS, addDays, formatDate, nassauNow, stationOf, type Airline, type Flight, type FlightOps, type Station, type FeedbackItem, type GateEventType, type GateLog, type HubEvent, type Person,
   type Reassignment, type RosterEntry, type ShiftCode,
 } from "@nfs/db";
 import { AIRLINES, ROUTES, demoCharters, generateDataset, type Charter, type Dataset, type RouteTemplate } from "@nfs/demo";
@@ -124,6 +124,8 @@ interface HubState {
   adviceFor: (flightId: string) => FlightAdvice;
   saveAdvice: (a: FlightAdvice) => void;
   changeGate: (flightId: string, gate: string, reason: string) => void;
+  /** Cancel, delay or keep a flight overnight for the day; null puts it back to schedule. */
+  setFlightOps: (flightId: string, ops: Omit<FlightOps, "by" | "at"> | null) => void;
   /** Issues on inbound flights posted by Rampline operations, for a flight (by flight number and date). */
   alertsFor: (flightId: string) => InboundAlert[];
   ackAlert: (flightId: string, alertId: string) => void;
@@ -327,7 +329,20 @@ export function HubProvider({ children }: { children: React.ReactNode }) {
     const leftOn = new Map(people.filter((p) => p.leftOn).map((p) => [p.id, p.leftOn!]));
     const withAbsence = applyAbsences({ roster: leftOn.size ? roster.filter((r) => !leftOn.has(r.personId) || r.date <= leftOn.get(r.personId)!) : roster }, absent).roster;
     const adv = state.advice as Record<string, FlightAdvice>;
-    const flights = Object.keys(adv).length ? generated.flights.map((f) => (adv[f.id]?.gate && adv[f.id].gate !== f.gate ? { ...f, gate: adv[f.id].gate!, gateFrom: f.gate } : f)) : generated.flights;
+    let flights = Object.keys(adv).length ? generated.flights.map((f) => (adv[f.id]?.gate && adv[f.id].gate !== f.gate ? { ...f, gate: adv[f.id].gate!, gateFrom: f.gate } : f)) : generated.flights;
+    // Day-of changes: cancelled / delayed / remain overnight (a RON departure reappears on its new date)
+    if (Object.values(adv).some((a) => a?.ops)) {
+      const extra: Flight[] = [];
+      flights = flights.map((f) => {
+        const ops = adv[f.id]?.ops;
+        if (!ops) return f;
+        if (ops.status === "ron" && ops.newDate) {
+          extra.push({ ...f, id: `${f.id}-ron`, date: ops.newDate, std: ops.newStd ?? f.std, ronOf: f.id, overnight: true, ops: adv[`${f.id}-ron`]?.ops });
+        }
+        return { ...f, ops };
+      });
+      if (extra.length) flights = [...flights, ...extra].sort((a, b) => (a.date + a.std).localeCompare(b.date + b.std));
+    }
     return { ...generated, people, roster: withAbsence, flights };
   }, [generated, plan, overrides, state.profile, state.advice, absenceList, genTimes]);
   const liveIdx = React.useMemo(() => new Map(ds.roster.map((r) => [`${r.personId}|${r.date}`, r.shift])), [ds]);
@@ -806,6 +821,30 @@ export function HubProvider({ children }: { children: React.ReactNode }) {
     },
     [generated, adviceFor, write, entry, session, state.log, notify],
   );
+  const setFlightOps = React.useCallback(
+    (flightId: string, ops: Omit<FlightOps, "by" | "at"> | null) => {
+      const f = ds.flights.find((x) => x.id === flightId);
+      if (!f) return;
+      const cur = adviceFor(flightId);
+      const next: FlightAdvice = { ...cur, ops: ops ? { ...ops, by: session?.name ?? "Duty manager", at: new Date().toISOString() } : undefined };
+      const what = !ops
+        ? `back on schedule`
+        : ops.status === "cancelled"
+          ? `cancelled (${ops.reason})`
+          : ops.status === "delayed"
+            ? `delayed to ${ops.newStd} (${ops.reason})`
+            : `remaining overnight, departs ${ops.newDate ? fmtDay(ops.newDate) : "next day"} ${ops.newStd ?? f.std} (${ops.reason})`;
+      write([{ kind: "advice", id: flightId, payload: next }, entry({ action: "schedule.change", summary: `${f.flightNo} ${fmtDay(f.date)} ${what}`, teams: [f.airline], date: f.date, ref: flightId })]);
+      // The team on the flight, supervisors at that terminal and the airline's leads on shift that day
+      const log = gateLogs.find((g) => g.flightId === flightId);
+      const team = log ? log.team.map((t) => t.personId) : [];
+      const sups = ds.people.filter((p) => p.role === "supervisor" && p.homeTerminal === f.terminal).map((p) => p.id);
+      const leads = ds.people.filter((p) => p.role === "lead" && p.coreAirline === f.airline && ["E", "M", "L"].includes(liveIdx.get(`${p.id}|${f.date}`) ?? "")).map((p) => p.id);
+      const title = !ops ? `${f.flightNo} back on schedule` : ops.status === "cancelled" ? `${f.flightNo} cancelled` : ops.status === "delayed" ? `${f.flightNo} delayed` : `${f.flightNo} remaining overnight`;
+      notify({ to: [...new Set([...team, ...sups, ...leads])], kind: "gate", title, body: `${fmtDay(f.date)} · ${what}`, href: `/gate/${flightId}` });
+    },
+    [ds, adviceFor, write, entry, session, gateLogs, liveIdx, notify],
+  );
   const inbound = React.useMemo<InboundAlert[]>(() => {
     const fromRampline = events
       .filter((e) => e.type === EVENT_TYPES.inboundAlert)
@@ -1107,6 +1146,7 @@ export function HubProvider({ children }: { children: React.ReactNode }) {
     adviceFor,
     saveAdvice,
     changeGate,
+    setFlightOps,
     alertsFor,
     ackAlert,
     postInboundAlert,

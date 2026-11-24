@@ -40,8 +40,11 @@ export interface Summary {
   otherDelays: number;
 }
 
+/** The flight actually operated (cancelled and overnighted flights are kept out of on-time figures). */
+export const operated = (l: GateLog) => l.outcome !== "cancelled" && l.outcome !== "ron";
+
 export function summarise(logs: GateLog[], airlines: Map<string, Airline>): Summary {
-  const filed = logs.filter((l) => l.status === "filed");
+  const filed = logs.filter((l) => l.status === "filed" && operated(l));
   const n = filed.length || 1;
   const boards = filed.map(boardingMinutes).filter((x): x is number => x !== null);
   return {

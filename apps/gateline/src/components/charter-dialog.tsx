@@ -3,7 +3,7 @@ import * as React from "react";
 import Link from "next/link";
 import { Plane } from "lucide-react";
 import { Badge, Button, Dialog, DialogContent, Input, Select, Textarea, cn } from "@nfs/ui";
-import { formatDate, fromMinutes, toMinutes, type Terminal } from "@nfs/db";
+import { FLIGHT_KINDS, formatDate, fromMinutes, toMinutes, type FlightKind, type Terminal } from "@nfs/db";
 import type { Charter } from "@nfs/demo";
 import { useHub } from "@/lib/store";
 
@@ -57,7 +57,10 @@ export function CharterDialog({ charter, date, onClose }: { charter?: Charter; d
   const isNew = !charter;
   const handler = hub.ds.airlines.find((a) => a.code === c.handledAs);
   const clash = hub.ds.flights.some((f) => f.date === c.date && f.flightNo.replace(/\s/g, "") === c.flightNo.replace(/\s/g, "") && f.adhoc?.id !== c.id);
-  const valid = c.operator.trim().length > 1 && c.flightNo.trim().length > 1 && /^\d{4}-\d{2}-\d{2}$/.test(c.date) && /^[A-Z]{3}$/.test(c.dest) && !clash;
+  const kind: FlightKind = c.kind ?? "turn";
+  const valid =
+    c.operator.trim().length > 1 && c.flightNo.trim().length > 1 && /^\d{4}-\d{2}-\d{2}$/.test(c.date) && !clash &&
+    (kind === "arrival" ? /^[A-Z]{3}$/.test(c.origin ?? "") : /^[A-Z]{3}$/.test(c.dest));
   const set = (patch: Partial<Charter>) => setC((x) => ({ ...x, ...patch }));
   const [confirmDelete, setConfirmDelete] = React.useState(false);
 
@@ -65,9 +68,17 @@ export function CharterDialog({ charter, date, onClose }: { charter?: Charter; d
     <Dialog open onOpenChange={(v) => !v && onClose()}>
       <DialogContent
         className="max-w-2xl"
-        title={isNew ? "Add charter flight" : `Charter ${charter.flightNo}`}
-        description="One-off flights that aren't in the schedule. Once added they count toward SLA coverage, show on rosters and get a gate log like any departure."
+        title={isNew ? "Add one-off flight" : `Charter ${charter.flightNo}`}
+        description="Charters, extra sections and ad-hoc arrivals that aren't in the schedule. Departures count toward SLA coverage, show on rosters and get a gate log; arrivals show on flight tracking."
       >
+        <p className="mb-1.5 text-xs font-semibold text-muted">Type</p>
+        <div className="mb-4 grid grid-cols-3 gap-1 rounded-xl bg-surface p-1">
+          {(Object.keys(FLIGHT_KINDS) as FlightKind[]).map((k) => (
+            <button key={k} type="button" onClick={() => set({ kind: k, ...(k === "arrival" ? { std: c.sta } : {}) })} className={cn("h-9 cursor-pointer rounded-lg text-xs font-semibold transition-colors", kind === k ? "bg-card text-brand-700 shadow-sm" : "text-muted hover:text-brand-700")}>
+              {FLIGHT_KINDS[k]}
+            </button>
+          ))}
+        </div>
         <div className="grid gap-3 sm:grid-cols-3">
           <Field label="Operator / customer" className="sm:col-span-2" hint="Tour operator, charter company, sports team or private group">
             <Input value={c.operator} onChange={(e) => set({ operator: e.target.value })} placeholder="e.g. Sun Wings Holidays" />
@@ -94,7 +105,15 @@ export function CharterDialog({ charter, date, onClose }: { charter?: Charter; d
               {hub.ds.airlines.filter((a) => !a.charter).map((a) => <option key={a.code} value={a.code}>Extra section · {a.name}</option>)}
             </Select>
           </Field>
-          <Field label="Inbound arrival (STA)"><Input type="time" value={c.sta} onChange={(e) => set({ sta: e.target.value })} /></Field>
+          {kind !== "departure" ? (
+            <>
+              <Field label="Inbound flight (if different)"><Input value={c.inboundNo ?? ""} onChange={(e) => set({ inboundNo: e.target.value.toUpperCase() })} placeholder="Same as above" /></Field>
+              <Field label="Arriving from (code)"><Input value={c.origin ?? ""} maxLength={3} onChange={(e) => set({ origin: e.target.value.toUpperCase() })} placeholder="FLL" /></Field>
+              <Field label="Arriving from"><Input value={c.originName ?? ""} onChange={(e) => set({ originName: e.target.value })} placeholder="Fort Lauderdale" /></Field>
+              <Field label="Arrival (STA)"><Input type="time" value={c.sta} onChange={(e) => set({ sta: e.target.value, ...(kind === "arrival" ? { std: e.target.value } : {}) })} /></Field>
+            </>
+          ) : null}
+          {kind !== "arrival" ? (
           <Field label="Departure (STD)">
             <Input
               type="time"
@@ -106,14 +125,19 @@ export function CharterDialog({ charter, date, onClose }: { charter?: Charter; d
               }}
             />
           </Field>
+          ) : null}
           <Field label="Terminal">
             <Select value={c.terminal} onChange={(e) => set({ terminal: e.target.value as Terminal })} className="w-full">
               <option value="US">US Departures</option>
               <option value="INTL">International</option>
             </Select>
           </Field>
-          <Field label="Destination code"><Input value={c.dest} maxLength={3} onChange={(e) => set({ dest: e.target.value.toUpperCase() })} placeholder="MIA" /></Field>
-          <Field label="Destination name"><Input value={c.destName} onChange={(e) => set({ destName: e.target.value })} placeholder="Miami" /></Field>
+          {kind !== "arrival" ? (
+            <>
+              <Field label="Destination code"><Input value={c.dest} maxLength={3} onChange={(e) => set({ dest: e.target.value.toUpperCase() })} placeholder="MIA" /></Field>
+              <Field label="Destination name"><Input value={c.destName} onChange={(e) => set({ destName: e.target.value })} placeholder="Miami" /></Field>
+            </>
+          ) : null}
           <Field label="Gate"><Input value={c.gate} onChange={(e) => set({ gate: e.target.value.toUpperCase() })} placeholder="D45" /></Field>
           <Field label="Aircraft"><Input value={c.aircraft} onChange={(e) => set({ aircraft: e.target.value })} placeholder="B737-800" /></Field>
           <Field label="Passengers"><Input type="number" min={1} max={500} value={c.pax} onChange={(e) => set({ pax: Math.max(1, Number(e.target.value) || 1) })} /></Field>

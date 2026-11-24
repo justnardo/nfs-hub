@@ -7,7 +7,7 @@
 import { addDays, rangeDays, stationBy, stationOf, type Airline, type FeedbackItem, type Flight, type GateLog, type Person, type Reassignment } from "@nfs/db";
 import type { EngineInput } from "@nfs/rules";
 import type { Absence } from "./absence";
-import { boardingMinutes, doorCloseVsStd, isNfsCause, slaMet } from "./metrics";
+import { boardingMinutes, doorCloseVsStd, isNfsCause, operated, slaMet } from "./metrics";
 import { buildReport } from "./report";
 
 type RGB = [number, number, number];
@@ -102,7 +102,7 @@ export async function downloadAirlineReport(airline: Airline, month: string, dat
   const period = `${fmt(from, { day: "numeric", month: "long" })} – ${fmt(to, { day: "numeric", month: "long", year: "numeric" })}`;
   const lastY = () => (doc as unknown as { lastAutoTable: { finalY: number } }).lastAutoTable.finalY;
   const flightBy = new Map(data.flights.map((f) => [f.id, f]));
-  const logs = data.logs.filter((l) => l.airline === airline.code && l.status === "filed" && l.date >= from && l.date <= to).sort((a, b) => a.date.localeCompare(b.date) || (flightBy.get(a.flightId)?.std ?? "").localeCompare(flightBy.get(b.flightId)?.std ?? ""));
+  const logs = data.logs.filter((l) => l.airline === airline.code && l.status === "filed" && operated(l) && l.date >= from && l.date <= to).sort((a, b) => a.date.localeCompare(b.date) || (flightBy.get(a.flightId)?.std ?? "").localeCompare(flightBy.get(b.flightId)?.std ?? ""));
 
   const headed = new Set<number>();
   const pageHeader = (compact: boolean) => {
