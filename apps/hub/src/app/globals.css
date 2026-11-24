@@ -1,8 +1,0 @@
-@import "tailwindcss";
-@import "@nfs/ui/styles.css";
-@source "../../../../packages/ui/src";
-
-@keyframes hub-pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.35; } }
-.hub-pulse { animation: hub-pulse 1.6s ease-in-out infinite; }
-@keyframes hub-in { from { opacity: 0; transform: translateY(-4px); } to { opacity: 1; transform: none; } }
-.hub-in { animation: hub-in 0.35s ease-out; }

@@ -3,8 +3,8 @@ import * as React from "react";
 import { LayoutGrid } from "lucide-react";
 import { cn } from "@nfs/ui";
 
-const HUB = process.env.NEXT_PUBLIC_NFS_HUB_HOME ?? "";
-const RAMPLINE = process.env.NEXT_PUBLIC_RAMPLINE_URL ?? "";
+const HUB = process.env.NEXT_PUBLIC_NFS_HUB_HOME || "/hub";
+const RAMPLINE = process.env.NEXT_PUBLIC_RAMPLINE_URL || "https://rampline-three.vercel.app";
 
 /** The NFS Hub app switcher: hub home and Rampline. Hidden when neither address is set. */
 export function HubSwitcher() {

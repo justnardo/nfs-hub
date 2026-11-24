@@ -1,10 +1,10 @@
 import Image from "next/image";
 import { ArrowRight, BarChart3, BrainCircuit, GraduationCap, LayoutGrid, Plane, PlaneTakeoff, UsersRound } from "lucide-react";
 import { FirstGlanceCredit } from "@nfs/ui";
-import { LiveFeed } from "@/components/live-feed";
+import { LiveFeed } from "@/components/hub-live-feed";
 
-const RAMPLINE = process.env.NEXT_PUBLIC_RAMPLINE_URL ?? "";
-const GATELINE = process.env.NEXT_PUBLIC_GATELINE_URL ?? "";
+const RAMPLINE = process.env.NEXT_PUBLIC_RAMPLINE_URL || "https://rampline-three.vercel.app";
+const GATELINE = "/";
 
 /** Phase 1 modules: live, connected through the hub. */
 const MODULES = [
@@ -31,6 +31,9 @@ const NEXT = [
   { name: "Operations assistant", body: "Watches every module and suggests fixes for managers to approve.", icon: BrainCircuit },
 ];
 
+export const metadata = { title: { absolute: "NFS Hub · Nassau Flight Services" }, robots: { index: false, follow: false } };
+
+/** The NFS Hub home: both Phase 1 modules, how they connect, and the hub's live event log. */
 export default function HubHome() {
   return (
     <div className="min-h-dvh">
@@ -64,7 +67,7 @@ export default function HubHome() {
           {MODULES.map((m) => (
             <a
               key={m.name}
-              href={m.href || undefined}
+              href={m.href || "#"}
               className="group flex flex-col rounded-2xl border border-line bg-card p-5 shadow-sm transition-all hover:-translate-y-0.5 hover:border-brand-300 hover:shadow-md"
             >
               <div className="flex items-start justify-between gap-3">
