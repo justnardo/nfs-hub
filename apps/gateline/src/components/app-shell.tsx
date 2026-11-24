@@ -268,7 +268,12 @@ export function AppShell({ children }: { children: React.ReactNode }) {
               <GatelineWordmark dark />
               <button onClick={() => setDrawer(false)} className="cursor-pointer rounded-lg p-2 text-ink-400 transition-colors hover:bg-brand-500/10 hover:text-brand-200" aria-label="Close menu"><X className="size-5" /></button>
             </div>
-            {hub.canSwitchStation ? <div className="px-5 pb-3"><StationSwitch dark /></div> : null}
+            {hub.canSwitchStation ? (
+              <div className="mt-2 px-5 pb-4">
+                <p className="mb-2 px-1 text-[10px] font-bold uppercase tracking-[0.14em] text-ink-400">Station</p>
+                <StationSwitch dark className="w-full" />
+              </div>
+            ) : null}
             {navList(false)}
             {account(false)}
           </aside>
@@ -347,7 +352,7 @@ function StationSwitch({ dark, className }: { dark?: boolean; className?: string
     <div
       role="radiogroup"
       aria-label="Station"
-      className={cn("flex shrink-0 items-center gap-0.5 rounded-full p-0.5", dark ? "bg-white/10" : "bg-ink-100", className)}
+      className={cn("flex shrink-0 items-center gap-0.5 rounded-full p-0.5", dark ? "grid grid-cols-2 bg-white/10 p-1" : "bg-ink-100", className)}
     >
       {hub.stations.map((s) => {
         const on = s.code === hub.station;
@@ -359,7 +364,8 @@ function StationSwitch({ dark, className }: { dark?: boolean; className?: string
             title={s.airport}
             onClick={() => hub.setStation(s.code)}
             className={cn(
-              "h-7 cursor-pointer rounded-full px-3 text-xs font-semibold transition-colors",
+              "cursor-pointer rounded-full font-semibold transition-colors",
+              dark ? "h-10 px-4 text-sm" : "h-7 px-3 text-xs",
               on
                 ? dark ? "bg-brand-500 text-white" : "bg-card text-brand-700 shadow-sm"
                 : dark ? "text-ink-300 hover:text-brand-200" : "text-muted hover:text-brand-700",
