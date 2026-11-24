@@ -10,6 +10,7 @@ import { useHub, personName } from "@/lib/store";
 import { RequirePerm } from "@/components/guard";
 import { AirlineChip } from "@/components/ops";
 import { LogFeedbackDialog, Stars } from "@/components/feedback";
+import { FeedbackCalendar } from "@/components/feedback-calendar";
 import { FEEDBACK_SOURCES } from "@/lib/feedback";
 import type { FeedbackItem } from "@nfs/db";
 
@@ -31,11 +32,13 @@ function Feedback() {
   const [logging, setLogging] = React.useState(false);
   const [responding, setResponding] = React.useState<FeedbackItem | null>(null);
   const [links, setLinks] = React.useState(false);
+  const [day, setDay] = React.useState<string | null>(null);
   const map = new Map(hub.ds.airlines.map((a) => [a.code, a]));
-  const items = hub.feedback.filter((f) => (!airline || f.airline === airline) && (!kind || f.kind === kind) && (!status || f.status === status));
+  const filtered = hub.feedback.filter((f) => (!airline || f.airline === airline) && (!kind || f.kind === kind) && (!status || f.status === status));
+  const items = day ? filtered.filter((f) => f.date === day) : filtered;
   const manage = can(hub.session?.role, "feedback.manage");
   const canLog = manage || can(hub.session?.role, "roster.edit");
-  const paged = usePaged(items, 10, [airline, kind, status]);
+  const paged = usePaged(items, 10, [airline, kind, status, day]);
   const rated = hub.feedback.filter((f) => f.rating);
   const avg = rated.length ? rated.reduce((s, f) => s + (f.rating ?? 0), 0) / rated.length : 0;
   const top = React.useRef<HTMLDivElement>(null);
@@ -61,8 +64,18 @@ function Feedback() {
         <Select value={kind} onChange={(e) => setKind(e.target.value)} aria-label="Type"><option value="">Praise and complaints</option><option value="praise">Praise</option><option value="complaint">Complaints</option></Select>
         <Select value={status} onChange={(e) => setStatus(e.target.value)} aria-label="Status"><option value="">Any status</option><option value="open">Open</option><option value="reviewed">Reviewed</option><option value="closed">Closed</option></Select>
       </Card>
-      <div ref={top} className="scroll-mt-20 space-y-2.5">
-        {!paged.rows.length ? <Card className="p-8 text-center text-sm text-muted">No feedback matches these filters.</Card> : null}
+      <div className="grid items-start gap-4 @4xl/main:grid-cols-[19rem_1fr]">
+      <div className="@4xl/main:sticky @4xl/main:top-20">
+        <FeedbackCalendar items={filtered} today={hub.today} minDate={hub.ds.windowStart} selected={day} onSelect={setDay} />
+      </div>
+      <div ref={top} className="min-w-0 scroll-mt-20 space-y-2.5">
+        {day ? (
+          <p className="flex items-center justify-between px-1 text-sm">
+            <span><span className="font-semibold">{formatDate(day, { weekday: "long", day: "numeric", month: "long" })}</span> <span className="text-muted">· {items.length} comment{items.length === 1 ? "" : "s"}</span></span>
+            <button onClick={() => setDay(null)} className="cursor-pointer text-xs font-semibold text-brand-700 transition-colors hover:text-brand-500">Show all dates</button>
+          </p>
+        ) : null}
+        {!paged.rows.length ? <Card className="p-8 text-center text-sm text-muted">{day ? "No feedback on this day." : "No feedback matches these filters."}</Card> : null}
         {paged.rows.map((f) => {
           const Src = SOURCE_ICON[f.source ?? "seed"];
           const log = f.flightId ? hub.logByFlight.get(f.flightId) : undefined;
@@ -103,6 +116,7 @@ function Feedback() {
           );
         })}
         <Pagination paged={paged} noun="comments" scrollTo={top} sizes={[10, 25, 50]} />
+      </div>
       </div>
       {logging ? <LogFeedbackDialog airline={airline || undefined} onClose={() => setLogging(false)} /> : null}
       {responding ? <RespondDialog item={responding} onClose={() => setResponding(null)} /> : null}

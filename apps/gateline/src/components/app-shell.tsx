@@ -14,7 +14,7 @@ import { useHub } from "@/lib/store";
 import { FirstGlanceCredit, GatelineWordmark, NfsMark } from "./brand";
 import { GlobalSearch, type SearchPage } from "./global-search";
 import { NotificationBell } from "./notifications";
-import { FlashHost } from "./flash";
+import { flash, FlashHost } from "./flash";
 import { SiteLoader, useFirstLoad } from "./site-loader";
 
 type NavItem = { href: string; label: string; icon: React.ComponentType<{ className?: string }>; perm?: Permission; mobile?: boolean };
@@ -294,6 +294,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             <div className="md:hidden"><GlobalSearch pages={SEARCH_PAGES} variant="icon" /></div>
             <Badge tone="gold" className="hidden xl:inline-flex">Demo data · fictional staff</Badge>
             <NotificationBell />
+            <OfflineNotice />
             <button
               onClick={() => hub.setOffline(!hub.offline)}
               title={hub.offline ? "Offline — records held on this device" : `Online · sync via ${transport() === "supabase" ? "Supabase" : "local demo"}`}
@@ -304,6 +305,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             >
               {hub.offline ? <WifiOff className="size-3.5" /> : <Wifi className="size-3.5" />}
               <span className="hidden sm:inline">{hub.offline ? `Offline${hub.pendingCount ? ` · ${hub.pendingCount} queued` : ""}` : "Online"}</span>
+              {hub.offline && hub.pendingCount ? <span className="grid min-w-4 place-items-center rounded-full bg-amber-600 px-1 text-[10px] leading-4 text-white sm:hidden">{hub.pendingCount}</span> : null}
             </button>
             {can(role, "system.admin") ? (
               <Button variant="ghost" size="icon" title="Reset demo data" onClick={() => hub.resetDemo()} className="hidden sm:inline-flex">
@@ -377,4 +379,22 @@ function StationSwitch({ dark, className }: { dark?: boolean; className?: string
       })}
     </div>
   );
+}
+
+/** Tells the user when Gateline goes offline or back online (by the switch or the network), and what happens to their entries. */
+function OfflineNotice() {
+  const hub = useHub();
+  const prev = React.useRef<{ offline: boolean; pending: number } | null>(null);
+  React.useEffect(() => {
+    if (!hub.ready) return;
+    const was = prev.current;
+    prev.current = { offline: hub.offline, pending: hub.pendingCount };
+    if (!was || was.offline === hub.offline) return;
+    if (hub.offline) {
+      flash({ title: "Offline mode on", body: "Gate log entries are saved on this phone and sync automatically when you're back online. Tap the signal button to go back online.", tone: "warn" }, 8000);
+    } else {
+      flash({ title: "Back online", body: was.pending ? `${was.pending} saved record${was.pending === 1 ? "" : "s"} synced.` : "Everything is up to date.", tone: "ok" });
+    }
+  }, [hub.ready, hub.offline, hub.pendingCount]);
+  return null;
 }

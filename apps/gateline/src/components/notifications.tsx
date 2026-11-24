@@ -1,4 +1,5 @@
 "use client";
+import { flash } from "./flash";
 import * as React from "react";
 
 import { useRouter } from "next/navigation";
@@ -19,7 +20,7 @@ function ago(iso: string) {
 }
 
 /** Phone alert switch: asks permission and registers this device for the person signed in. */
-export function PushToggle({ compact = false }: { compact?: boolean }) {
+export function PushToggle({ compact = false, onDone }: { compact?: boolean; onDone?: () => void }) {
   const hub = useHub();
   const [st, setSt] = React.useState<PushState | null>(null);
   const [busy, setBusy] = React.useState(false);
@@ -41,11 +42,36 @@ export function PushToggle({ compact = false }: { compact?: boolean }) {
         disabled={busy || !hub.session}
         onClick={async () => {
           setBusy(true);
-          if (st === "on") {
-            await disablePush();
-            setSt("off");
-          } else setSt(await enablePush(hub.session!.personId));
-          setBusy(false);
+          const brave = typeof navigator !== "undefined" && "brave" in navigator;
+          try {
+            if (st === "on") {
+              await disablePush();
+              setSt("off");
+              flash({ title: "Phone alerts turned off", body: "You'll still see alerts here in Gateline while it's open." });
+              onDone?.();
+            } else {
+              const next = await enablePush(hub.session!.personId);
+              setSt(next);
+              if (next === "on") {
+                flash({ title: "Phone alerts turned on", body: "This phone will get team assignments, gate changes and assistance requests, even when Gateline is closed.", tone: "ok" });
+                onDone?.();
+              } else if (next === "denied") {
+                flash({ title: "Alerts are blocked", body: "Notifications are blocked for this site. Allow them in your browser's site settings, then try again.", tone: "warn" }, 10000);
+              } else {
+                flash({ title: "Alerts weren't turned on", body: "Permission wasn't given, or the alert service couldn't be reached. Try again.", tone: "warn" }, 9000);
+              }
+            }
+          } catch {
+            flash({
+              title: "This browser blocked phone alerts",
+              body: brave
+                ? "Brave blocks push alerts by default. In Brave settings → Privacy and security, turn on \"Use Google services for push messaging\", then try again. Or open Gateline in Chrome."
+                : "The browser refused to set up alerts on this device. Try Chrome, or add Gateline to your home screen and try again.",
+              tone: "warn",
+            }, 14000);
+          } finally {
+            setBusy(false);
+          }
         }}
       >
         {st === "on" ? "Turn off" : "Turn on"}
@@ -135,7 +161,7 @@ export function NotificationBell() {
               );
             })}
           </ul>
-          <div className="border-t border-line bg-surface px-4 py-3"><PushToggle compact /></div>
+          <div className="border-t border-line bg-surface px-4 py-3"><PushToggle compact onDone={() => setOpen(false)} /></div>
         </div>
       ) : null}
 

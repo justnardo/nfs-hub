@@ -7,6 +7,17 @@ export type Role = "agent" | "lead" | "supervisor" | "manager" | "admin";
 export type Terminal = "US" | "INTL";
 export type ShiftCode = "E" | "M" | "L" | "O" | "V";
 
+export interface SlaAgreement {
+  /** Date the airline agreed these figures (YYYY-MM-DD). */
+  agreedOn: string;
+  /** Who agreed them for the airline, e.g. the station manager. */
+  agreedWith: string;
+  /** NFS manager who recorded them in Gateline. */
+  recordedBy: string;
+  recordedAt: string;
+  note?: string;
+}
+
 export interface SlaMinimums {
   counter: number;
   gate: number;
@@ -28,6 +39,10 @@ export interface Airline {
   sla: SlaMinimums;
   /** SLA figures are demo placeholders until NFS supplies the real minimums. */
   slaConfirmed: boolean;
+  /** Who agreed the current SLA and when (set when a manager records a new agreement). */
+  slaAgreement?: SlaAgreement;
+  /** Earlier SLA figures, newest first, so a change can be traced. */
+  slaHistory?: (SlaAgreement & { sla: SlaMinimums; replacedAt: string })[];
   stationManager: { name: string; phone: string; email: string; preferences: string };
   requiredTraining: string[];
   usesJetBridge: boolean;

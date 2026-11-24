@@ -6,7 +6,7 @@ import { can } from "@nfs/auth";
 import { WeekStrip, type WeekState } from "@/components/week-strip";
 import { periodEnd, withPeriod } from "@/lib/periods";
 import { applyAbsences } from "@/lib/absence";
-import { Badge, Button, Card, CardContent, CardDescription, CardHeader, CardTitle, PageHeader, Stat } from "@nfs/ui";
+import { Badge, Button, Card, CardContent, CardDescription, CardHeader, CardTitle, PageHeader, Stat, Table, Td, Th, Tr } from "@nfs/ui";
 import { addDays, formatDate, rangeDays, weekStart } from "@nfs/db";
 import { coverageGrid, type CoverageCell } from "@nfs/rules";
 import { useHub, personName } from "@/lib/store";
@@ -60,7 +60,7 @@ export default function CoveragePage() {
       <PageHeader
         eyebrow="Protected coverage"
         title="SLA coverage heatmap"
-        description="Trained, rostered agents per airline and shift against the airline's SLA peak demand. Untrained or expired staff never count, and agents helping another team don't count for their own."
+        description="Each cell is trained, rostered agents against what that airline's own SLA needs at the busiest moment of the shift. The SLA figures come from each airline's profile; see the table below. Untrained or expired staff never count."
         actions={<Button variant="secondary" size="sm" onClick={() => setWs(weekStart(hub.today))}>This week</Button>}
       />
       <div className="mb-4"><WeekStrip weeks={weekList} value={ws} onChange={setWs} today={hub.today} /></div>
@@ -100,6 +100,8 @@ export default function CoveragePage() {
         </CardContent>
       </Card>
 
+      <SlaSources />
+
       <div className="mt-5 grid gap-5 @3xl/main:grid-cols-2">
         <Card>
           <CardHeader><div><CardTitle>Next gaps to fix</CardTitle><CardDescription>From today forward, in time order</CardDescription></div></CardHeader>
@@ -133,5 +135,41 @@ export default function CoveragePage() {
 
       <ReassignDialog cell={liveCell} open={!!cell} onOpenChange={(v) => !v && setCell(null)} />
     </>
+  );
+}
+
+/** Where the "required" numbers come from: each airline's SLA, with a link to update it. */
+function SlaSources() {
+  const hub = useHub();
+  const manage = can(hub.session?.role, "airlines.edit");
+  const list = hub.ds.airlines.filter((a) => !a.charter);
+  return (
+    <Card className="mt-5">
+      <CardHeader>
+        <div>
+          <CardTitle>Where the required numbers come from</CardTitle>
+          <CardDescription>Each airline's SLA minimums. Per flight: the counter figure while check-in is open (3 h to 1 h before departure), the gate figure from 1 h before to 10 min after, and a lead while any flight is worked. Overlapping flights add up.</CardDescription>
+        </div>
+      </CardHeader>
+      <CardContent className="px-0 sm:px-5">
+        <Table>
+          <thead><Tr><Th>Airline</Th><Th className="text-center">Counter</Th><Th className="text-center">Gate</Th><Th className="text-center">Lead</Th><Th>SLA</Th><Th /></Tr></thead>
+          <tbody>
+            {list.map((a) => (
+              <Tr key={a.code}>
+                <Td><span className="flex items-center gap-2"><AirlineChip airline={a} /><span className="hidden truncate @3xl/main:inline">{a.name}</span></span></Td>
+                <Td className="text-center tabular">{a.sla.counter}</Td>
+                <Td className="text-center tabular">{a.sla.gate + (a.usesJetBridge ? a.sla.jetBridge : 0)}{a.usesJetBridge && a.sla.jetBridge ? <span className="text-[10px] text-muted"> incl. bridge</span> : null}</Td>
+                <Td className="text-center tabular">{a.sla.lead}</Td>
+                <Td>{a.slaConfirmed ? <Badge tone="ok">{a.slaAgreement ? `Agreed ${formatDate(a.slaAgreement.agreedOn, { day: "numeric", month: "short" })}` : "Agreed"}</Badge> : <Badge tone="gold">Placeholder</Badge>}</Td>
+                <Td className="text-right">
+                  <Link href={`/airlines/${a.code}${manage ? "?sla=edit" : ""}#sla`} className="text-xs font-semibold whitespace-nowrap text-brand-600 transition-colors hover:text-brand-700">{manage ? "Update" : "View"}</Link>
+                </Td>
+              </Tr>
+            ))}
+          </tbody>
+        </Table>
+      </CardContent>
+    </Card>
   );
 }

@@ -109,6 +109,8 @@ interface HubState {
   /** Applies a suggested fix; returns the move's id (if a cover move) and the cells it changed, for undo. */
   applyFix: (fix: Fix, overrideReason?: string | null) => { refId?: string; cells: CellChange[] };
   saveAirline: (a: Airline) => void;
+  /** Record a new or changed SLA agreement; coverage, rosters and fixes use it straight away. */
+  updateSla: (code: string, sla: Airline["sla"], meta: { agreedOn: string; agreedWith: string; note?: string }) => void;
   removeAirline: (code: string) => void;
   saveRoute: (r: RouteTemplate) => void;
   removeRoute: (flightNo: string) => void;
@@ -536,6 +538,27 @@ export function HubProvider({ children }: { children: React.ReactNode }) {
       write([{ kind: "airline", id: a.code, payload: a }, entry({ action: "airline.change", summary: `${isNew ? "Added" : "Updated"} ${a.name} (${a.code})`, teams: [a.code], ref: a.code })]);
     },
     [write, entry, airlines],
+  );
+  const updateSla = React.useCallback(
+    (code: string, sla: Airline["sla"], meta: { agreedOn: string; agreedWith: string; note?: string }) => {
+      const a = airlines.find((x) => x.code === code);
+      if (!a) return;
+      const now = new Date().toISOString();
+      const prev = { ...(a.slaAgreement ?? { agreedOn: "", agreedWith: a.slaConfirmed ? "" : "Placeholder figures", recordedBy: "", recordedAt: "" }), sla: a.sla, replacedAt: now };
+      const next: Airline = {
+        ...a,
+        sla: { ...sla, jetBridge: a.usesJetBridge ? sla.jetBridge : 0 },
+        slaConfirmed: true,
+        slaAgreement: { agreedOn: meta.agreedOn, agreedWith: meta.agreedWith, note: meta.note, recordedBy: actor?.name ?? "Manager", recordedAt: now },
+        slaHistory: [prev, ...(a.slaHistory ?? [])].slice(0, 20),
+      };
+      const fig = (x: Airline["sla"]) => `${x.counter} counter, ${x.gate} gate${a.usesJetBridge ? `, ${x.jetBridge} jet bridge` : ""}, ${x.lead} lead`;
+      write([
+        { kind: "airline", id: code, payload: next },
+        entry({ action: "airline.change", summary: `New SLA for ${a.name}: ${fig(next.sla)} (was ${fig(a.sla)}), agreed with ${meta.agreedWith}`, teams: [code], ref: code }),
+      ]);
+    },
+    [write, entry, airlines, actor],
   );
   const removeAirline = React.useCallback(
     (code: string) => {
@@ -1071,6 +1094,7 @@ export function HubProvider({ children }: { children: React.ReactNode }) {
     revertCells,
     applyFix,
     saveAirline,
+    updateSla,
     removeAirline,
     saveRoute,
     removeRoute,

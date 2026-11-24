@@ -1,8 +1,9 @@
 "use client";
+import { SlaCard } from "@/components/sla-card";
 import { AirlineReportButton } from "@/components/airline-report-button";
 import * as React from "react";
 import Link from "next/link";
-import { useParams } from "next/navigation";
+import { useParams, useSearchParams } from "next/navigation";
 import { UserPlus, ArrowLeft, Mail, Pencil, Phone, Plus, Trash2 } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { can } from "@nfs/auth";
@@ -35,6 +36,7 @@ function AirlineProfile() {
   const [route, setRoute] = React.useState<RouteTemplate | "new" | null>(null);
   const [confirmRemove, setConfirmRemove] = React.useState(false);
   const a = hub.ds.airlines.find((x) => x.code === code);
+  const slaEdit = useSearchParams().get("sla") === "edit";
   const core = hub.ds.people.filter((p) => a && (a.charter ? p.trainedAirlines.includes(a.code) && (p.role === "agent" || p.role === "lead") : p.coreAirline === a.code)).sort((x, y) => (x.role === y.role ? x.lastName.localeCompare(y.lastName) : x.role === "lead" ? -1 : 1));
   const corePage = usePaged(core, 10, code);
   const [showAllBackup, setShowAllBackup] = React.useState(false);
@@ -59,7 +61,7 @@ function AirlineProfile() {
         description={a.stationManager.preferences}
         actions={
           <>
-            {!a.slaConfirmed ? <Badge tone="gold">SLA figures are placeholders until NFS confirms</Badge> : null}
+            {!a.slaConfirmed && !a.charter ? <a href="#sla"><Badge tone="gold">SLA figures are placeholders: update below</Badge></a> : null}
             {!a.charter ? <AirlineReportButton airline={a} /> : null}
             {manage ? <Button variant="outline" onClick={() => setEditing(true)}><Pencil /> Edit airline</Button> : null}
             {manage && !a.charter ? (
@@ -119,6 +121,7 @@ function AirlineProfile() {
         </Card>
 
         <div className="space-y-5">
+          {a.charter ? null : <SlaCard airline={a} autoOpen={slaEdit} />}
           <Card>
             <CardHeader><div><CardTitle>Station manager</CardTitle><CardDescription>Contact details are fictional in the demo</CardDescription></div></CardHeader>
             <CardContent className="space-y-2 text-sm">
