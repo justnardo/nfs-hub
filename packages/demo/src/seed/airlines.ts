@@ -183,6 +183,37 @@ export const AIRLINES: Airline[] = [
     requiredTraining: ["British Airways DCS", "Wide-body Boarding", "Jet Bridge Operation"],
     usesJetBridge: true,
   },
+  // ---- Exuma station (GGT): one terminal, walk-out boarding, no jet bridges ----
+  {
+    code: "AA",
+    name: "American Airlines",
+    station: "GGT",
+    terminal: "INTL",
+    colour: "#0078d2",
+    logoUrl: null,
+    aircraft: ["E175", "A319"],
+    sla: { counter: 2, gate: 1, jetBridge: 0, lead: 1, supervisor: 0 },
+    slaConfirmed: false,
+    stationManager: { name: "K. Rolle", phone: "+1 242 555 0271", email: "ggt@example-aa.com", preferences: "Walk-out boarding; one agent at the stairs. Weight-and-balance figures to the captain before door close." },
+    requiredTraining: ["American DCS", "Walk-out Boarding Safety"],
+    timings: { checkInOpens: 180, checkInCloses: 45, boardingStarts: 35, gateCloses: 10 },
+    usesJetBridge: false,
+  },
+  {
+    code: "DL",
+    name: "Delta Air Lines",
+    station: "GGT",
+    terminal: "INTL",
+    colour: "#c8102e",
+    logoUrl: null,
+    aircraft: ["B737-800", "A320"],
+    sla: { counter: 2, gate: 1, jetBridge: 0, lead: 1, supervisor: 0 },
+    slaConfirmed: false,
+    stationManager: { name: "S. Ferguson", phone: "+1 242 555 0284", email: "ggt@example-delta.com", preferences: "Weekend service. Bag tags checked twice; no gate-checked bags over 22 kg." },
+    requiredTraining: ["Delta DCS", "Walk-out Boarding Safety"],
+    timings: { checkInOpens: 180, checkInCloses: 45, boardingStarts: 40, gateCloses: 10 },
+    usesJetBridge: false,
+  },
   {
     code: "CHR",
     name: "Charters & ad-hoc",
@@ -241,6 +272,10 @@ export const ROUTES: RouteTemplate[] = [
   { airline: "PD", flightNo: "PD 2793", dest: "YYZ", destName: "Toronto", std: "14:30", turnMins: 55, aircraft: "E195-E2", gate: "D46", seats: 132, days: [0, 3, 4, 6] },
   // British Airways — International (wide-body via Grand Cayman)
   { airline: "BA", flightNo: "BA 252", dest: "LHR", destName: "London Heathrow", std: "17:55", turnMins: 85, aircraft: "B777-200ER", gate: "D48", seats: 275, days: [0, 2, 4] },
+  // Exuma (GGT) — appended last so Nassau's generated data is unchanged
+  { airline: "AA", flightNo: "AA 2879", dest: "MIA", destName: "Miami", std: "12:45", turnMins: 50, aircraft: "E175", gate: "G1", seats: 76 },
+  { airline: "AA", flightNo: "AA 1062", dest: "CLT", destName: "Charlotte", std: "16:30", turnMins: 55, aircraft: "A319", gate: "G2", seats: 128, days: [0, 4, 6] },
+  { airline: "DL", flightNo: "DL 1846", dest: "ATL", destName: "Atlanta", std: "14:20", turnMins: 60, aircraft: "B737-800", gate: "G1", seats: 160, days: [0, 5, 6] },
 ];
 
 /** A one-off charter or ad-hoc flight. Lives alongside the schedule rather than in it. */

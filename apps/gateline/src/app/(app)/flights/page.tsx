@@ -5,7 +5,7 @@ import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { Siren, ChevronLeft, ChevronRight, Pencil, Plus, Radar } from "lucide-react";
 import { Badge, Button, Card, CardContent, CardDescription, CardHeader, CardTitle, PageHeader, Table, Td, Th, Tr, cn } from "@nfs/ui";
 import { can } from "@nfs/auth";
-import { addDays, formatDate, type Terminal } from "@nfs/db";
+import { addDays, formatDate, stationBy, type Terminal } from "@nfs/db";
 import type { Charter } from "@nfs/demo";
 import { timingsFor } from "@nfs/db";
 import { deriveStatus, flightaware, flightradar24 } from "@nfs/flights";
@@ -88,11 +88,11 @@ function Flights() {
         <Badge tone={past ? "neutral" : live ? "ok" : "brand"}>{past ? "History" : live ? "Live" : "Schedule + gate log"}</Badge>
       </Card>
 
-      {(["US", "INTL"] as Terminal[]).map((t) => {
+      {(hub.station === "NAS" ? (["US", "INTL"] as Terminal[]) : (["INTL"] as Terminal[])).map((t) => {
         const list = flights.filter((f) => f.terminal === t);
         return (
           <Card key={t} className="mb-5">
-            <CardHeader><div><CardTitle>{t === "US" ? "US Departures Terminal" : "International Terminal"}</CardTitle><CardDescription>{list.length} departures{list.some((f) => f.adhoc) ? ` · ${list.filter((f) => f.adhoc).length} charter` : ""}</CardDescription></div></CardHeader>
+            <CardHeader><div><CardTitle>{hub.station !== "NAS" ? `${stationBy(hub.station).airport}` : t === "US" ? "US Departures Terminal" : "International Terminal"}</CardTitle><CardDescription>{list.length} departures{list.some((f) => f.adhoc) ? ` · ${list.filter((f) => f.adhoc).length} charter` : ""}</CardDescription></div></CardHeader>
             <CardContent className="px-2 sm:px-5">
               {list.length === 0 ? <p className="px-2 pb-2 text-sm text-muted">No departures from this terminal on {formatDate(date)}.</p> : (
                 <Table>

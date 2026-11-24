@@ -51,7 +51,12 @@ const TEAM_PLAN: { airline: string; leads: number; agents: number }[] = [
 const FLOAT_POOL = 5;
 const SUPERVISORS: Terminal[] = ["US", "US", "INTL", "INTL"];
 
-const SCHEDULED = AIRLINES.filter((a) => !a.charter);
+// Nassau's scheduled carriers. Other stations are generated separately (and last) so Nassau's demo data stays the same.
+const SCHEDULED = AIRLINES.filter((a) => !a.charter && !a.station);
+const EXUMA_PLAN: { airline: string; leads: number; agents: number }[] = [
+  { airline: "AA", leads: 2, agents: 8 },
+  { airline: "DL", leads: 1, agents: 4 },
+];
 const COURSES: Record<string, string[]> = Object.fromEntries(AIRLINES.map((a) => [a.code, a.requiredTraining]));
 
 function makeName(r: ReturnType<typeof rng>, used: Set<string>) {
@@ -132,19 +137,44 @@ export function generateDataset(today: string, nowMinutes: number, config: Datas
     people.push(mkPerson("supervisor", term, null, trained, r.int(2004, 2012), 1011 + i));
   });
   // Presenting manager: a fixed, named account for demos (generated name is still drawn so the rest of the seed is unchanged)
-  const presenter = mkPerson("manager", "INTL", null, AIRLINES.map((a) => a.code), 2003, 1001);
+  const presenter = mkPerson("manager", "INTL", null, AIRLINES.filter((a) => !a.station).map((a) => a.code), 2003, 1001);
   presenter.firstName = "Dia";
   presenter.lastName = "Trembley";
   people.push(presenter);
-  people.push(mkPerson("manager", "US", null, AIRLINES.map((a) => a.code), 2006, 1002));
+  people.push(mkPerson("manager", "US", null, AIRLINES.filter((a) => !a.station).map((a) => a.code), 2006, 1002));
   people.push(mkPerson("admin", "INTL", null, [], 2015, 1000));
+  // Managers cover every station
+  for (const p of people) if (p.role === "manager") p.trainedAirlines = [...p.trainedAirlines, ...AIRLINES.filter((a) => a.station).map((a) => a.code)];
+
+  // ---------- Exuma station (GGT) ----------
+  // Its own random stream and staff numbers (NFS-51xx), so adding it doesn't change Nassau's people
+  {
+    const xr = rng("exuma-people-v1");
+    let no = 5100;
+    const mk = (role: Role, core: string | null, trained: string[], hireYear: number, fixed?: number): Person => {
+      const { f, l } = makeName(xr, used);
+      const id = fixed ?? no++;
+      return {
+        id: `p${id}`, staffNo: `NFS-${id}`, firstName: f, lastName: l, role, homeTerminal: "INTL", station: "GGT", coreAirline: core,
+        trainedAirlines: trained, training: trained.flatMap((a) => training(xr, a, today, role === "agent" ? 0.07 : 0.03)),
+        phone: `+1 242 555 ${String(2000 + (id % 8000)).slice(-4)}`, hireYear,
+      };
+    };
+    const exumaCodes = EXUMA_PLAN.map((x) => x.airline);
+    for (const plan of EXUMA_PLAN) {
+      const other = exumaCodes.filter((c) => c !== plan.airline);
+      for (let i = 0; i < plan.leads; i++) people.push(mk("lead", plan.airline, [plan.airline, ...other], xr.int(2009, 2018)));
+      for (let i = 0; i < plan.agents; i++) people.push(mk("agent", plan.airline, [plan.airline, ...(xr.chance(0.5) ? other : [])], xr.int(2012, 2025)));
+    }
+    people.push(mk("supervisor", null, exumaCodes, 2007, 1021));
+  }
 
   // Charter handling briefing: every lead, supervisor and float agent, plus about four in ten core agents
   const charterOp = AIRLINES.find((a) => a.charter);
   if (charterOp) {
     const cr = rng("charter-briefing-v1");
     for (const p of people) {
-      if (p.role === "manager" || p.role === "admin" || p.trainedAirlines.includes(charterOp.code)) continue;
+      if (p.role === "manager" || p.role === "admin" || p.station || p.trainedAirlines.includes(charterOp.code)) continue;
       const eligible = p.role !== "agent" || !p.coreAirline || cr.chance(0.4);
       if (!eligible) continue;
       p.trainedAirlines = [...p.trainedAirlines, charterOp.code];
@@ -292,8 +322,9 @@ export function generateDataset(today: string, nowMinutes: number, config: Datas
     rosterTeam(active.filter((p) => p.role === "agent" && !p.coreAirline), ws, () => 1, "pool");
     rosterTeam(active.filter((p) => p.role === "lead" && !p.coreAirline), ws, () => 1, "pool-leads");
     for (const term of ["US", "INTL"] as Terminal[]) {
-      rosterTeam(active.filter((p) => p.role === "supervisor" && p.homeTerminal === term && !onLines.has(p.id)), ws, () => 1, `sup-${term}`);
+      rosterTeam(active.filter((p) => p.role === "supervisor" && !p.station && p.homeTerminal === term && !onLines.has(p.id)), ws, () => 1, `sup-${term}`);
     }
+    rosterTeam(active.filter((p) => p.role === "supervisor" && p.station === "GGT"), ws, () => 1, "sup-GGT");
   }
 
   // Nothing after a leaver's last day
@@ -442,7 +473,7 @@ export function generateDataset(today: string, nowMinutes: number, config: Datas
   // ---------- Airline feedback ----------
   const feedback: FeedbackItem[] = [];
   const fbr = rng("feedback-v1");
-  const filed = gateLogs.filter((g) => g.status === "filed" && !airlineBy.get(g.airline)?.charter);
+  const filed = gateLogs.filter((g) => g.status === "filed" && !airlineBy.get(g.airline)?.charter && !airlineBy.get(g.airline)?.station);
   const PRAISE = [
     "Station manager thanked the gate team for a smooth on-time departure despite late inbound.",
     "Positive passenger comment about the wheelchair assistance at the gate.",
@@ -470,6 +501,19 @@ export function generateDataset(today: string, nowMinutes: number, config: Datas
       summary: praise ? fbr.pick(PRAISE) : fbr.pick(COMPLAINT),
       personIds: [g.leadId],
       status: g.date < addDays(today, -7) ? "closed" : fbr.pick(["open", "reviewed"] as const),
+    });
+  }
+  // Exuma's feedback, from its own stream
+  const xfb = rng("feedback-ggt-v1");
+  const filedGgt = gateLogs.filter((g) => g.status === "filed" && airlineBy.get(g.airline)?.station === "GGT");
+  for (let k = 0; filedGgt.length && k < 6; k++) {
+    const g = xfb.pick(filedGgt);
+    const praise = xfb.chance(g.delayMinutes > 14 ? 0.2 : 0.6);
+    const air = airlineBy.get(g.airline)!;
+    feedback.push({
+      id: `fbggt${k}`, date: g.date, airline: g.airline, flightId: g.flightId, kind: praise ? "praise" : "complaint", from: air.stationManager.name,
+      summary: praise ? xfb.pick(PRAISE) : xfb.pick(COMPLAINT.filter((c) => !c.includes("Jet bridge"))), personIds: [g.leadId],
+      status: g.date < addDays(today, -7) ? "closed" : xfb.pick(["open", "reviewed"] as const),
     });
   }
   feedback.sort((a, b) => b.date.localeCompare(a.date));

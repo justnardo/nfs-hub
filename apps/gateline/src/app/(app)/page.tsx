@@ -3,7 +3,7 @@ import * as React from "react";
 import Link from "next/link";
 import { Siren, AlertTriangle, ArrowRight, BadgeCheck, Clock, GraduationCap, PlaneTakeoff, Users } from "lucide-react";
 import { Badge, Button, Card, CardContent, CardDescription, CardHeader, CardTitle, PageHeader, Stat, Table, Td, Th, Tr, cn } from "@nfs/ui";
-import { formatDate } from "@nfs/db";
+import { formatDate, stationBy } from "@nfs/db";
 import { coverageGrid, expiringSoon, type CoverageCell } from "@nfs/rules";
 import { timingsFor } from "@nfs/db";
 import { deriveStatus } from "@nfs/flights";
@@ -13,6 +13,7 @@ import { AirlineChip, FlightStatusBadge, LEVEL_STYLE, PersonLink, ReassignDialog
 import { pct, summarise } from "@/lib/metrics";
 import { Pagination, usePaged } from "@/components/pagination";
 import { LiveActivity } from "@/components/live-activity";
+import { NeedsAttention } from "@/components/needs-attention";
 import { TodayDetail, trainingDue, type TodayDetailKind } from "@/components/today-details";
 
 export default function TodayPage() {
@@ -51,7 +52,7 @@ function Today() {
   return (
     <>
       <PageHeader
-        eyebrow={`${formatDate(hub.today, { weekday: "long", day: "numeric", month: "long" })} · LPIA`}
+        eyebrow={`${formatDate(hub.today, { weekday: "long", day: "numeric", month: "long" })} · ${stationBy(hub.station).short}`}
         title="Today above the wing"
         description="Live position for passenger services: departures, gate progress, coverage against SLA and anything that needs a manager."
         actions={
@@ -70,6 +71,8 @@ function Today() {
         <Stat onClick={() => setDetail("issues")} label="Discrepancies" value={openDisc.length} sub="logged at the gate today" icon={<AlertTriangle />} />
         <Stat onClick={() => setDetail("training")} label="Training due" value={due.expired.length + due.soon.length} tone={due.expired.length ? "bad" : due.soon.length ? "warn" : "ok"} sub={`${due.expired.length} expired · ${due.soon.length} in 30 days`} icon={<GraduationCap />} />
       </div>
+
+      <NeedsAttention className="mt-5" onFixGap={setCell} />
 
       {/* On phones and narrow screens the live feed sits right under the tiles, not at the bottom. */}
       <LiveActivity className="mt-5 @5xl/main:hidden" perPage={5} />

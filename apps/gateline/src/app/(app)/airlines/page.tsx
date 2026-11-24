@@ -1,4 +1,5 @@
 "use client";
+import { AirlineReportButton } from "@/components/airline-report-button";
 import * as React from "react";
 import Link from "next/link";
 import { ArrowRight, Plus } from "lucide-react";
@@ -30,7 +31,12 @@ function Airlines() {
         eyebrow="Airline profiles"
         title="Airlines above the wing"
         description="Each carrier's SLA minimums, training requirements, core team and station manager expectations. Airline-specific teams are the core unit."
-        actions={can(hub.session?.role, "airlines.edit") ? <Button onClick={() => setAdding(true)}><Plus /> Add airline</Button> : null}
+        actions={
+          <>
+            <AirlineReportButton label="Monthly reports" />
+            {can(hub.session?.role, "airlines.edit") ? <Button onClick={() => setAdding(true)}><Plus /> Add airline</Button> : null}
+          </>
+        }
       />
       {adding ? <AirlineDialog onClose={() => setAdding(false)} /> : null}
       <div className="grid gap-4 @2xl/main:grid-cols-2 @5xl/main:grid-cols-3">
@@ -44,7 +50,7 @@ function Airlines() {
               <Card className="h-full p-5 transition-colors group-hover:border-brand-400">
                 <div className="flex items-start justify-between">
                   <AirlineChip airline={a} size="md" />
-                  {a.charter ? <Badge tone="gold">One-off flights</Badge> : <Badge tone={a.terminal === "US" ? "dark" : "neutral"}>{a.terminal === "US" ? "US Departures" : "International"}</Badge>}
+                  {a.charter ? <Badge tone="gold">One-off flights</Badge> : <Badge tone={a.terminal === "US" ? "dark" : "neutral"}>{a.station === "GGT" ? "Exuma International" : a.terminal === "US" ? "US Departures" : "International"}</Badge>}
                 </div>
                 <div className="mt-4 grid grid-cols-4 gap-2 text-center">
                   {[

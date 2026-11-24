@@ -54,7 +54,7 @@ export function shiftShortfall(ctx: CoverageContext, airline: string, date: stri
 
 /** "15:45–19:00" for a cell's gaps, or "" when there are none. */
 export function gapText(cell: CoverageCell): string {
-  return cell.gaps.map((g) => `${g.from}–${g.to}`).join(", ");
+  return [...new Set(cell.gaps.map((g) => `${g.from}–${g.to}`))].join(", ");
 }
 
 const name = (p: Person) => `${p.firstName} ${p.lastName}`;

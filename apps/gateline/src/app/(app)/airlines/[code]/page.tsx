@@ -1,4 +1,5 @@
 "use client";
+import { AirlineReportButton } from "@/components/airline-report-button";
 import * as React from "react";
 import Link from "next/link";
 import { useParams } from "next/navigation";
@@ -53,12 +54,13 @@ function AirlineProfile() {
     <>
       <Button variant="ghost" size="sm" asChild className="mb-2"><Link href="/airlines"><ArrowLeft /> Airlines</Link></Button>
       <PageHeader
-        eyebrow={a.terminal === "US" ? "US Departures Terminal" : "International Terminal"}
+        eyebrow={a.station === "GGT" ? "Exuma International Airport" : a.terminal === "US" ? "US Departures Terminal" : "International Terminal"}
         title={a.name}
         description={a.stationManager.preferences}
         actions={
           <>
             {!a.slaConfirmed ? <Badge tone="gold">SLA figures are placeholders until NFS confirms</Badge> : null}
+            {!a.charter ? <AirlineReportButton airline={a} /> : null}
             {manage ? <Button variant="outline" onClick={() => setEditing(true)}><Pencil /> Edit airline</Button> : null}
             {manage && !a.charter ? (
               confirmRemove ? (

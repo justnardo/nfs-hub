@@ -1,4 +1,5 @@
 "use client";
+import { AirlineReportButton } from "@/components/airline-report-button";
 import * as React from "react";
 import { useParams } from "next/navigation";
 import { CheckCircle2, Loader2, ShieldCheck } from "lucide-react";
@@ -132,6 +133,13 @@ export default function AirlineFeedbackPage() {
           Send feedback
         </Button>
         <p className="mt-3 flex items-center justify-center gap-1.5 text-[11px] text-muted"><ShieldCheck className="size-3.5" /> Private link for {airline.name}. Goes only to Nassau Flight Services managers.</p>
+      </Card>
+      <Card className="mt-4 flex flex-col gap-3 p-5 sm:flex-row sm:items-center sm:justify-between">
+        <div>
+          <p className="font-display font-semibold">Your monthly service report</p>
+          <p className="mt-0.5 text-xs text-muted">On-time results, delay causes and every {airline.code} flight we handled, as a PDF.</p>
+        </div>
+        <AirlineReportButton airline={airline} label="Download" preparedBy="NFS Passenger Services" />
       </Card>
     </Shell>
   );

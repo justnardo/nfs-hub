@@ -1,7 +1,7 @@
 "use client";
 import * as React from "react";
 import {
-  addDays, formatDate, nassauNow, type Airline, type FeedbackItem, type GateEventType, type GateLog, type HubEvent, type Person,
+  STATIONS, addDays, formatDate, nassauNow, stationOf, type Airline, type Station, type FeedbackItem, type GateEventType, type GateLog, type HubEvent, type Person,
   type Reassignment, type RosterEntry, type ShiftCode,
 } from "@nfs/db";
 import { AIRLINES, ROUTES, demoCharters, generateDataset, type Charter, type Dataset, type RouteTemplate } from "@nfs/demo";
@@ -49,6 +49,7 @@ export interface PasswordRequest {
 type RemovedMarker = { removed: true };
 type ProfilePatch = { email?: string; photoUrl?: string | null; phone?: string };
 
+const K_STATION = "gateline.station";
 function load<T>(storage: "local" | "session", key: string, fallback: T): T {
   try {
     const s = storage === "local" ? window.localStorage : window.sessionStorage;
@@ -157,6 +158,12 @@ interface HubState {
   undo: (entryId: string) => boolean;
   refreshSession: () => void;
   resetDemo: () => void;
+  /** The station being viewed ("NAS", "GGT"). Everything above is scoped to it; `people` stays complete for lookups. */
+  station: string;
+  stations: Station[];
+  /** Managers and admins can switch station; everyone else sees their own. */
+  canSwitchStation: boolean;
+  setStation: (code: string) => void;
 }
 
 export interface CellMeta {
@@ -181,6 +188,8 @@ export function HubProvider({ children }: { children: React.ReactNode }) {
   const [events, setEvents] = React.useState<HubEvent[]>([]);
   const [offline, setOfflineState] = React.useState(false);
   const [session, setSession] = React.useState<Session | null>(null);
+  const [stationPick, setStationPick] = React.useState<string | null>(null);
+  React.useEffect(() => setStationPick(load<string | null>("local", K_STATION, null)), []);
   const [synced, setSynced] = React.useState(false);
 
   const reload = React.useCallback(() => {
@@ -617,7 +626,7 @@ export function HubProvider({ children }: { children: React.ReactNode }) {
       write([{ kind: "feedback", id: item.id, payload: item }]);
       const a = generated.airlines.find((x) => x.code === f.airline);
       const fl = f.flightId ? generated.flights.find((x) => x.id === f.flightId) : undefined;
-      const to = generated.people.filter((p) => p.role === "manager" || (f.kind === "complaint" && p.role === "supervisor" && p.homeTerminal === a?.terminal)).map((p) => p.id);
+      const to = generated.people.filter((p) => p.role === "manager" || (f.kind === "complaint" && p.role === "supervisor" && p.homeTerminal === a?.terminal && stationOf(p) === stationOf(a))).map((p) => p.id);
       notify({
         to,
         kind: "team",
@@ -984,27 +993,65 @@ export function HubProvider({ children }: { children: React.ReactNode }) {
     reload();
   }, [reload]);
 
+  // ---------------- Station scope ----------------
+  const meP = session ? people.get(session.personId) ?? null : null;
+  const canSwitchStation = meP?.role === "manager" || meP?.role === "admin";
+  const station = canSwitchStation ? stationPick ?? stationOf(meP) : stationOf(meP);
+  const setStation = React.useCallback((code: string) => {
+    setStationPick(code);
+    save("local", K_STATION, code);
+  }, []);
+  const scoped = React.useMemo(() => {
+    // Signed-out pages (the station manager's private link) see every station
+    if (!meP) return { ds, gateLogs, feedback, reassignments, routes, charters, periods, audit, absences, staffRequests };
+    const airlinesIn = ds.airlines.filter((a) => stationOf(a) === station);
+    const codes = new Set(airlinesIn.map((a) => a.code));
+    const peopleIn = ds.people.filter((p) => p.role === "manager" || p.role === "admin" || stationOf(p) === station);
+    const ids = new Set(peopleIn.map((p) => p.id));
+    const inTeams = (teams?: string[]) => !teams?.length || teams.some((t) => codes.has(t) || !/^[A-Z0-9]{2,3}$/.test(t) || !ds.airlines.some((a) => a.code === t));
+    return {
+      ds: {
+        ...ds,
+        airlines: airlinesIn,
+        people: peopleIn,
+        flights: ds.flights.filter((f) => codes.has(f.airline)),
+        roster: ds.roster.filter((r) => ids.has(r.personId)),
+        gateLogs: ds.gateLogs.filter((g) => codes.has(g.airline)),
+        feedback: ds.feedback.filter((f) => codes.has(f.airline)),
+      },
+      gateLogs: gateLogs.filter((g) => codes.has(g.airline)),
+      feedback: feedback.filter((f) => codes.has(f.airline)),
+      reassignments: reassignments.filter((r) => ids.has(r.personId) || codes.has(r.toAirline)),
+      routes: routes.filter((r) => codes.has(r.airline)),
+      charters: charters.filter((c) => codes.has(c.handledAs)),
+      periods: periods.filter((p) => inTeams(p.teams)),
+      audit: audit.filter((e) => inTeams(e.teams)),
+      absences: absences.filter((a) => ids.has(a.personId)),
+      staffRequests: staffRequests.filter((r) => ids.has(r.by)),
+    };
+  }, [ds, meP, station, gateLogs, feedback, reassignments, routes, charters, periods, audit, absences, staffRequests]);
+
   const value: HubState = {
     ready: mounted,
-    ds,
+    ds: scoped.ds,
     today: clock.date,
     nowMin: clock.minutes,
     session,
     me: session ? people.get(session.personId) ?? null : null,
     people,
     rules,
-    gateLogs,
+    gateLogs: scoped.gateLogs,
     logByFlight,
-    reassignments,
-    feedback,
+    reassignments: scoped.reassignments,
+    feedback: scoped.feedback,
     events,
     overrides,
     rosterEdits,
-    routes,
-    charters,
+    routes: scoped.routes,
+    charters: scoped.charters,
     requests,
-    periods,
-    audit,
+    periods: scoped.periods,
+    audit: scoped.audit,
     synced,
     planShift: (personId: string, date: string) => plan.get(`${personId}|${date}`),
     offline,
@@ -1025,7 +1072,7 @@ export function HubProvider({ children }: { children: React.ReactNode }) {
     removeRoute,
     saveCharter,
     removeCharter,
-    absences,
+    absences: scoped.absences,
     absenceOn,
     saveAbsence,
     removeAbsence,
@@ -1039,7 +1086,7 @@ export function HubProvider({ children }: { children: React.ReactNode }) {
     unread,
     notify,
     remindOnce,
-    staffRequests,
+    staffRequests: scoped.staffRequests,
     requestSwap,
     respondSwap,
     requestLeave,
@@ -1061,6 +1108,10 @@ export function HubProvider({ children }: { children: React.ReactNode }) {
     undo,
     refreshSession: () => setSession(readSession()),
     resetDemo,
+    station,
+    stations: STATIONS,
+    canSwitchStation,
+    setStation,
   };
 
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;

@@ -18,6 +18,8 @@ export interface SlaMinimums {
 export interface Airline {
   code: string;
   name: string;
+  /** NFS station that handles this airline (e.g. "NAS" Nassau, "GGT" Exuma). Missing means Nassau. */
+  station?: string;
   terminal: Terminal;
   colour: string;
   /** Airline mark shared with Rampline (public airline-marks bucket). Falls back to the code chip. */
@@ -73,6 +75,8 @@ export interface Person {
   lastName: string;
   role: Role;
   homeTerminal: Terminal;
+  /** NFS station the person works at. Missing means Nassau. Managers and admins see every station. */
+  station?: string;
   /** Core airline team this person belongs to. Null for floating supervisors/managers. */
   coreAirline: string | null;
   /** Airlines trained on (core + qualified to cover). */
@@ -313,3 +317,20 @@ export interface Reassignment {
   approvedBy: string;
   at: string;
 }
+
+/** NFS stations. Each has its own airlines, staff, flights and rosters; managers switch between them. */
+export interface Station {
+  code: string;
+  name: string;
+  airport: string;
+  /** Short airport label for headers, e.g. "LPIA". */
+  short: string;
+}
+export const STATIONS: Station[] = [
+  { code: "NAS", name: "Nassau", airport: "Lynden Pindling International Airport", short: "LPIA" },
+  { code: "GGT", name: "Exuma", airport: "Exuma International Airport", short: "Exuma Intl" },
+];
+export const DEFAULT_STATION = "NAS";
+/** Station of an airline or person; missing means Nassau. */
+export const stationOf = (x?: { station?: string } | null): string => x?.station ?? DEFAULT_STATION;
+export const stationBy = (code: string): Station => STATIONS.find((s) => s.code === code) ?? STATIONS[0];

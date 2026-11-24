@@ -8,7 +8,7 @@ import {
 } from "lucide-react";
 import { Avatar, Badge, Button, cn } from "@nfs/ui";
 import { ROLE_LABEL, can, signOut, type Permission } from "@nfs/auth";
-import { formatDate } from "@nfs/db";
+import { formatDate, stationBy } from "@nfs/db";
 import { transport } from "@nfs/events";
 import { useHub } from "@/lib/store";
 import { FirstGlanceCredit, GatelineWordmark, NfsMark } from "./brand";
@@ -268,6 +268,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
               <GatelineWordmark dark />
               <button onClick={() => setDrawer(false)} className="cursor-pointer rounded-lg p-2 text-ink-400 transition-colors hover:bg-brand-500/10 hover:text-brand-200" aria-label="Close menu"><X className="size-5" /></button>
             </div>
+            {hub.canSwitchStation ? <div className="px-5 pb-3"><StationSwitch dark /></div> : null}
             {navList(false)}
             {account(false)}
           </aside>
@@ -280,8 +281,9 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           <button onClick={() => setDrawer(true)} className="-ml-1 cursor-pointer rounded-lg p-2 text-ink-700 transition-colors hover:bg-brand-50 hover:text-brand-700 lg:hidden" aria-label="Open menu"><Menu className="size-5" /></button>
           <div className="lg:hidden"><GatelineWordmark sub={false} /></div>
           <div className="hidden min-w-0 shrink-0 truncate text-sm text-muted 2xl:block">
-            <span className="font-semibold text-fg">LPIA</span> · <span className="tabular">{nowLabel}</span>
+            <span className="font-semibold text-fg">{stationBy(hub.station).short}</span> · <span className="tabular">{nowLabel}</span>
           </div>
+          {hub.canSwitchStation ? <StationSwitch className="hidden sm:flex" /> : null}
           <div className="hidden min-w-0 flex-1 justify-center md:flex"><GlobalSearch pages={SEARCH_PAGES} /></div>
           <div className="ml-auto flex items-center gap-2 md:ml-0">
             <div className="md:hidden"><GlobalSearch pages={SEARCH_PAGES} variant="icon" /></div>
@@ -334,6 +336,39 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           </button>
         </div>
       </nav>
+    </div>
+  );
+}
+
+/** Station picker — managers and admins move between Nassau and Exuma. */
+function StationSwitch({ dark, className }: { dark?: boolean; className?: string }) {
+  const hub = useHub();
+  return (
+    <div
+      role="radiogroup"
+      aria-label="Station"
+      className={cn("flex shrink-0 items-center gap-0.5 rounded-full p-0.5", dark ? "bg-white/10" : "bg-ink-100", className)}
+    >
+      {hub.stations.map((s) => {
+        const on = s.code === hub.station;
+        return (
+          <button
+            key={s.code}
+            role="radio"
+            aria-checked={on}
+            title={s.airport}
+            onClick={() => hub.setStation(s.code)}
+            className={cn(
+              "h-7 cursor-pointer rounded-full px-3 text-xs font-semibold transition-colors",
+              on
+                ? dark ? "bg-brand-500 text-white" : "bg-card text-brand-700 shadow-sm"
+                : dark ? "text-ink-300 hover:text-brand-200" : "text-muted hover:text-brand-700",
+            )}
+          >
+            {s.name}
+          </button>
+        );
+      })}
     </div>
   );
 }
