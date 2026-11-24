@@ -24,6 +24,12 @@ export interface SlaMinimums {
   jetBridge: number;
   lead: number;
   supervisor: number;
+  /** Agents to meet an inbound that ends its day here (arrival only, or remaining overnight). Missing = 1. */
+  arrival?: number;
+  /** Extra agents for each wheelchair passenger arriving. Missing = 1. */
+  arrivalPerWheelchair?: number;
+  /** Extra agents for each meet & greet or special service request on arrival. Missing = 1. */
+  arrivalPerService?: number;
 }
 
 export interface Airline {
@@ -156,8 +162,18 @@ export interface Flight {
   ops?: FlightOps;
   /** This departure is the continuation of a flight that remained overnight (its id). */
   ronOf?: string;
+  /** Arriving passengers who need someone from NFS (entered in Gateline or from Rampline inbound alerts). */
+  arrivalNeeds?: ArrivalNeeds;
   /** Where the flight came from: entered in Gateline, or synced from Rampline / the airline. */
   source?: "gateline" | "rampline" | "airline";
+}
+
+export interface ArrivalNeeds {
+  wheelchairs: number;
+  meetGreet: number;
+  /** Other special services: unaccompanied minors, medical, VIP, deportee escorts… */
+  special: number;
+  note?: string;
 }
 
 /** Does this flight leave from here today? (Arrival-only, cancelled and overnighted flights don't.) */

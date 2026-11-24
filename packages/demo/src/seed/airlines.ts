@@ -291,6 +291,8 @@ export const ROUTES: RouteTemplate[] = [
   { airline: "AA", flightNo: "AA 2879", dest: "MIA", destName: "Miami", std: "12:45", turnMins: 50, aircraft: "E175", gate: "G1", seats: 76 },
   { airline: "AA", flightNo: "AA 1062", dest: "CLT", destName: "Charlotte", std: "16:30", turnMins: 55, aircraft: "A319", gate: "G2", seats: 128, days: [0, 4, 6] },
   { airline: "DL", flightNo: "DL 1846", dest: "ATL", destName: "Atlanta", std: "14:20", turnMins: 60, aircraft: "B737-800", gate: "G1", seats: 160, days: [0, 5, 6] },
+  // InterCaribbean's evening inbound from Providenciales stays overnight (RON); an agent meets it per the JY SLA
+  { airline: "JY", flightNo: "JY 432", kind: "arrival", inboundNo: "JY 432", origin: "PLS", originName: "Providenciales", dest: "", destName: "", std: "19:40", sta: "19:40", turnMins: 0, aircraft: "ERJ-145", gate: "D47", seats: 50, source: "gateline" },
 ];
 
 /** A one-off charter or ad-hoc flight. Lives alongside the schedule rather than in it. */

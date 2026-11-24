@@ -2,7 +2,7 @@
  * Coverage in 15-minute slots: flight demand (counter phase, then gate + jet bridge phase) against
  * trained agents on duty. Agents helping another airline count there, not for their own team.
  */
-import { SHIFTS, effectiveStd, flightActiveAt, flightAgentNeedAt, rangeDays, toMinutes, type Airline, type Flight, type Person, type Reassignment, type RosterEntry, type ShiftCode } from "@nfs/db";
+import { SHIFTS, arrivalDateOf, effectiveStd, flightActiveAt, flightAgentNeedAt, flightArrivalNeedAt, rangeDays, toMinutes, type Airline, type Flight, type Person, type Reassignment, type RosterEntry, type ShiftCode } from "@nfs/db";
 import { SLOTS, SLOT_MIN, isWork, spanOf } from "./shifts";
 import { eligibleFor } from "./eligibility";
 
@@ -61,6 +61,8 @@ export class CoverageContext {
   readonly idx: ShiftIndex;
   readonly airlineBy = new Map<string, Airline>();
   readonly flightsBy = new Map<string, Flight[]>();
+  /** Inbounds to meet, by the date they land (a scheduled RON lands the evening before its departure date). */
+  readonly arrivalsBy = new Map<string, Flight[]>();
   readonly coreBy = new Map<string, Person[]>();
   readonly peopleBy = new Map<string, Person>();
   /** Exact shift times where the roster has them (line rosters); otherwise the standard band applies. */
@@ -80,6 +82,11 @@ export class CoverageContext {
       const list = this.flightsBy.get(k);
       if (list) list.push(f);
       else this.flightsBy.set(k, [f]);
+      const ad = arrivalDateOf(f);
+      if (ad) {
+        const ak = `${f.airline}|${ad}`;
+        this.arrivalsBy.set(ak, [...(this.arrivalsBy.get(ak) ?? []), f]);
+      }
     }
     for (const p of input.people) {
       this.peopleBy.set(p.id, p);
@@ -114,6 +121,7 @@ export class CoverageContext {
     if (hit) return hit;
     const a = this.airlineBy.get(airlineCode)!;
     const flights = this.flightsBy.get(ck) ?? [];
+    const arrivals = this.arrivalsBy.get(ck) ?? [];
     const moves = this.input.reassignments.filter((r) => r.date === date);
     const out = new Set(moves.filter((r) => r.fromAirline === airlineCode).map((r) => r.personId));
     const inn = moves.filter((r) => r.toAirline === airlineCode).map((r) => r.personId);
@@ -143,6 +151,13 @@ export class CoverageContext {
           contributing.add(f.id);
         }
         if (flightActiveAt(f, t)) active = true;
+      }
+      for (const f of arrivals) {
+        const x = flightArrivalNeedAt(f, a, t);
+        if (x > 0) {
+          n += x;
+          contributing.add(f.id);
+        }
       }
       need[s] = n;
       leadNeed[s] = active && a.sla.lead > 0 ? 1 : 0;
@@ -258,6 +273,11 @@ export function cellFromDay(dc: DayCoverage, shift: "E" | "L", ctx: CoverageCont
     flightIds: dc.flightIds.filter((id) => {
       const f = ctx.input.flights.find((x) => x.id === id);
       if (!f) return false;
+      // Met on arrival this date (and not departing it): place it by its landing time
+      if (arrivalDateOf(f) === dc.date && (f.date !== dc.date || f.kind === "arrival" || f.ops?.status === "ron")) {
+        const sta = toMinutes(f.sta);
+        return shift === "E" ? sta - 15 < toMinutes(SHIFTS.E.demandTo) : sta + 30 > toMinutes(SHIFTS.L.demandFrom);
+      }
       const stdSlot = toMinutes(effectiveStd(f));
       return shift === "E" ? stdSlot - 60 < toMinutes(SHIFTS.E.demandTo) : stdSlot + 10 > toMinutes(SHIFTS.L.demandFrom);
     }),

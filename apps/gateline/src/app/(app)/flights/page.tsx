@@ -2,10 +2,10 @@
 import * as React from "react";
 import Link from "next/link";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
-import { Siren, ChevronLeft, ChevronRight, Pencil, Plus, Radar } from "lucide-react";
+import { Accessibility, Siren, ChevronLeft, ChevronRight, Pencil, Plus, Radar } from "lucide-react";
 import { Badge, Button, Card, CardContent, CardDescription, CardHeader, CardTitle, PageHeader, Table, Td, Th, Tr, cn } from "@nfs/ui";
 import { can } from "@nfs/auth";
-import { addDays, formatDate, stationBy, type Terminal } from "@nfs/db";
+import { addDays, arrivalDateOf, flightArrivalNeed, formatDate, stationBy, visitEndsHere, type Flight, type Terminal } from "@nfs/db";
 import type { Charter } from "@nfs/demo";
 import { timingsFor } from "@nfs/db";
 import { deriveStatus, flightaware, flightradar24 } from "@nfs/flights";
@@ -15,6 +15,7 @@ import { AirlineChip, FlightStatusBadge, PersonLink } from "@/components/ops";
 import { DatePicker } from "@/components/date-picker";
 import { CharterBadge, CharterDialog } from "@/components/charter-dialog";
 import { FlightOpsButton } from "@/components/flight-ops";
+import { ArrivalNeedsDialog, ArrivalRequests } from "@/components/arrival-needs";
 
 export default function FlightsPage() {
   return (
@@ -43,6 +44,7 @@ function Flights() {
     [router, pathname, hub.today],
   );
   const [charter, setCharter] = React.useState<Charter | "new" | null>(null);
+  const [needs, setNeeds] = React.useState<Flight | null>(null);
   const manage = can(hub.session?.role, "roster.edit");
 
   const map = new Map(hub.ds.airlines.map((a) => [a.code, a]));
@@ -75,6 +77,7 @@ function Flights() {
           </div>
         }
       />
+      {needs ? <ArrivalNeedsDialog flight={needs} airline={map.get(needs.airline)!} onClose={() => setNeeds(null)} /> : null}
       {charter ? <CharterDialog charter={charter === "new" ? undefined : charter} date={date} onClose={() => setCharter(null)} /> : null}
 
       <Card className="mb-5 flex items-center gap-3 border-brand-100 bg-brand-50 p-4">
@@ -91,7 +94,10 @@ function Flights() {
 
       {(hub.station === "NAS" ? (["US", "INTL"] as Terminal[]) : (["INTL"] as Terminal[])).map((t) => {
         const list = flights.filter((f) => f.terminal === t && f.kind !== "arrival");
-        const arrivals = flights.filter((f) => f.terminal === t && (f.kind === "arrival" || (f.inboundNo && !f.overnight && !f.ronOf)));
+        // Every inbound landing this date: arrivals only, turnarounds, and RONs (a scheduled RON lands the evening before it departs)
+        const arrivals = hub.ds.flights
+          .filter((f) => f.terminal === t && arrivalDateOf(f) === date)
+          .sort((a, b) => a.sta.localeCompare(b.sta));
         return (
           <Card key={t} className="mb-5">
             <CardHeader><div><CardTitle>{hub.station !== "NAS" ? `${stationBy(hub.station).airport}` : t === "US" ? "US Departures Terminal" : "International Terminal"}</CardTitle><CardDescription>{list.length} departure{list.length === 1 ? "" : "s"}{arrivals.length ? ` · ${arrivals.length} arrival${arrivals.length === 1 ? "" : "s"} listed` : ""}{list.some((f) => f.adhoc) ? ` · ${list.filter((f) => f.adhoc).length} one-off` : ""}{list.some((f) => f.ops?.status === "cancelled") ? ` · ${list.filter((f) => f.ops?.status === "cancelled").length} cancelled` : ""}</CardDescription></div></CardHeader>
@@ -140,20 +146,31 @@ function Flights() {
               )}
               {arrivals.length ? (
                 <div className="mt-4">
-                  <p className="mb-1 px-2 text-xs font-semibold tracking-wide text-muted uppercase">Arrivals</p>
+                  <p className="mb-1 flex items-center justify-between px-2 text-xs font-semibold tracking-wide text-muted uppercase"><span>Arrivals</span><span className="font-normal normal-case tracking-normal">Meet = agents needed at the aircraft, from the airline&apos;s SLA and requests</span></p>
                   <Table>
-                    <thead><tr><Th>Flight</Th><Th>From</Th><Th>STA</Th><Th>Gate</Th><Th>Then</Th><Th>Status</Th></tr></thead>
+                    <thead><tr><Th>Flight</Th><Th className="hidden @3xl/main:table-cell">From</Th><Th>STA</Th><Th className="hidden @3xl/main:table-cell">Gate</Th><Th>Then</Th><Th>Requests</Th><Th className="text-center">Meet</Th><Th>Status</Th>{manage ? <Th /> : null}</tr></thead>
                     <tbody>
                       {arrivals.map((f) => {
-                        const s = deriveStatus({ ...f, kind: "arrival", ops: f.kind === "arrival" ? f.ops : undefined }, undefined, hub.today, hub.nowMin);
+                        const a = map.get(f.airline)!;
+                        const s = deriveStatus({ ...f, date, kind: "arrival", ops: undefined }, undefined, hub.today, hub.nowMin);
+                        const meet = flightArrivalNeed(f, a);
+                        const ends = visitEndsHere(f);
                         return (
-                          <Tr key={`arr-${f.id}`}>
-                            <Td className="whitespace-nowrap font-semibold"><span className="flex items-center gap-2"><AirlineChip airline={map.get(f.airline)!} />{f.inboundNo ?? f.flightNo}</span></Td>
-                            <Td>{f.originName || "—"} <span className="text-xs text-muted">{f.origin}</span></Td>
+                          <Tr key={`arr-${f.id}`} className={cn(ends && "bg-brand-50/40")}>
+                            <Td className="whitespace-nowrap font-semibold"><span className="flex items-center gap-2"><AirlineChip airline={a} />{f.inboundNo ?? f.flightNo}{!f.inboundNo && f.kind !== "arrival" ? <span className="text-xs font-normal text-muted">inbound</span> : null}</span></Td>
+                            <Td className="hidden @3xl/main:table-cell">{f.originName || "—"} <span className="text-xs text-muted">{f.origin}</span></Td>
                             <Td className="tabular font-semibold">{f.sta}</Td>
-                            <Td className="tabular">{f.gate}</Td>
-                            <Td className="text-xs text-muted">{f.kind === "arrival" ? "Ends here" : `Departs as ${f.flightNo} ${f.ops?.status === "delayed" ? f.ops.newStd : f.std}`}</Td>
+                            <Td className="hidden @3xl/main:table-cell tabular">{f.gate}</Td>
+                            <Td className="text-xs">
+                              {f.kind === "arrival" ? <span className="font-semibold text-brand-700">Ends here</span>
+                                : f.ops?.status === "ron" ? <span className="font-semibold text-brand-700">RON · departs {f.ops.newDate ? formatDate(f.ops.newDate) : "later"} {f.ops.newStd}</span>
+                                : f.overnight ? <span className="font-semibold text-brand-700">RON · departs {formatDate(f.date)} as {f.flightNo} {f.std}</span>
+                                : <span className="text-muted">Departs as {f.flightNo} {f.ops?.status === "delayed" ? f.ops.newStd : f.std}</span>}
+                            </Td>
+                            <Td><ArrivalRequests n={f.arrivalNeeds} /></Td>
+                            <Td className="text-center">{meet ? <Badge tone={ends ? "brand" : "gold"}>{meet}</Badge> : <span className="text-xs text-muted">Gate team</span>}</Td>
                             <Td><FlightStatusBadge status={s.status} /></Td>
+                            {manage ? <Td>{date >= hub.today ? <Button variant="ghost" size="icon" onClick={() => setNeeds(f)} aria-label={`Arrival requests for ${f.inboundNo ?? f.flightNo}`} title="Wheelchairs, meet & greet, special services"><Accessibility /></Button> : null}</Td> : null}
                           </Tr>
                         );
                       })}

@@ -1,7 +1,7 @@
 "use client";
 import * as React from "react";
 import {
-  STATIONS, addDays, formatDate, nassauNow, stationOf, type Airline, type Flight, type FlightOps, type Station, type FeedbackItem, type GateEventType, type GateLog, type HubEvent, type Person,
+  STATIONS, addDays, formatDate, nassauNow, stationOf, type Airline, type ArrivalNeeds, type Flight, type FlightOps, type Station, arrivalDateOf, type FeedbackItem, type GateEventType, type GateLog, type HubEvent, type Person,
   type Reassignment, type RosterEntry, type ShiftCode,
 } from "@nfs/db";
 import { AIRLINES, ROUTES, demoCharters, generateDataset, type Charter, type Dataset, type RouteTemplate } from "@nfs/demo";
@@ -126,6 +126,8 @@ interface HubState {
   changeGate: (flightId: string, gate: string, reason: string) => void;
   /** Cancel, delay or keep a flight overnight for the day; null puts it back to schedule. */
   setFlightOps: (flightId: string, ops: Omit<FlightOps, "by" | "at"> | null) => void;
+  /** Record who needs meeting off an inbound (wheelchairs, meet & greet, special services). */
+  setArrivalNeeds: (flightId: string, needs: ArrivalNeeds | null) => void;
   /** Issues on inbound flights posted by Rampline operations, for a flight (by flight number and date). */
   alertsFor: (flightId: string) => InboundAlert[];
   ackAlert: (flightId: string, alertId: string) => void;
@@ -845,6 +847,16 @@ export function HubProvider({ children }: { children: React.ReactNode }) {
     },
     [ds, adviceFor, write, entry, session, gateLogs, liveIdx, notify],
   );
+  const setArrivalNeeds = React.useCallback(
+    (flightId: string, needs: ArrivalNeeds | null) => {
+      const f = ds.flights.find((x) => x.id === flightId);
+      if (!f) return;
+      const cur = adviceFor(flightId);
+      const summary = needs ? [needs.wheelchairs && `${needs.wheelchairs} wheelchair`, needs.meetGreet && `${needs.meetGreet} meet & greet`, needs.special && `${needs.special} special service`].filter(Boolean).join(", ") || "no requests" : "cleared";
+      write([{ kind: "advice", id: flightId, payload: { ...cur, arrivalNeeds: needs ?? undefined } }, entry({ action: "schedule.change", summary: `Arrival needs for ${f.inboundNo ?? f.flightNo}: ${summary}`, teams: [f.airline], date: f.date, ref: flightId })]);
+    },
+    [ds, adviceFor, write, entry],
+  );
   const inbound = React.useMemo<InboundAlert[]>(() => {
     const fromRampline = events
       .filter((e) => e.type === EVENT_TYPES.inboundAlert)
@@ -1064,7 +1076,25 @@ export function HubProvider({ children }: { children: React.ReactNode }) {
     setStationPick(code);
     save("local", K_STATION, code);
   }, []);
+  // Arrival requests: what duty staff entered, plus wheelchairs Rampline flagged on the inbound
+  const dsN = React.useMemo<Dataset>(() => {
+    const adv = state.advice as Record<string, FlightAdvice>;
+    const fromAlerts = new Map<string, number>();
+    for (const a of inbound) if (a.wheelchairs) fromAlerts.set(`${a.flightNo}|${a.date}`, (fromAlerts.get(`${a.flightNo}|${a.date}`) ?? 0) + a.wheelchairs);
+    if (!fromAlerts.size && !Object.values(adv).some((x) => x?.arrivalNeeds)) return ds;
+    const flights = ds.flights.map((f) => {
+      const entered = adv[f.id]?.arrivalNeeds;
+      const ad = arrivalDateOf(f);
+      const alertW = ad ? (fromAlerts.get(`${f.inboundNo ?? f.flightNo}|${ad}`) ?? (f.inboundNo ? 0 : fromAlerts.get(`${f.flightNo}|${ad}`) ?? 0)) : 0;
+      if (!entered && !alertW) return f;
+      const n = entered ?? { wheelchairs: 0, meetGreet: 0, special: 0 };
+      return { ...f, arrivalNeeds: { ...n, wheelchairs: Math.max(n.wheelchairs, alertW) } };
+    });
+    return { ...ds, flights };
+  }, [ds, state.advice, inbound]);
+
   const scoped = React.useMemo(() => {
+    const ds = dsN;
     // Signed-out pages (the station manager's private link) see every station
     if (!meP) return { people, ds, gateLogs, feedback, reassignments, routes, charters, periods, audit, absences, staffRequests };
     const airlinesIn = ds.airlines.filter((a) => stationOf(a) === station);
@@ -1095,7 +1125,7 @@ export function HubProvider({ children }: { children: React.ReactNode }) {
       staffRequests: staffRequests.filter((r) => ids.has(r.by)),
       people: (() => { const byId = new Map(peopleIn.map((x) => [x.id, x])); return new Map([...people].map(([id, p]) => [id, byId.get(id) ?? p])); })(),
     };
-  }, [ds, people, meP, station, gateLogs, feedback, reassignments, routes, charters, periods, audit, absences, staffRequests]);
+  }, [dsN, people, meP, station, gateLogs, feedback, reassignments, routes, charters, periods, audit, absences, staffRequests]);
 
   const value: HubState = {
     ready: mounted,
@@ -1147,6 +1177,7 @@ export function HubProvider({ children }: { children: React.ReactNode }) {
     saveAdvice,
     changeGate,
     setFlightOps,
+    setArrivalNeeds,
     alertsFor,
     ackAlert,
     postInboundAlert,

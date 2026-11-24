@@ -1,5 +1,5 @@
 import { departsToday, effectiveStd, type Airline, type Flight, type ShiftCode } from "./types";
-import { toMinutes } from "./time";
+import { addDays, toMinutes } from "./time";
 
 export interface ShiftDef {
   code: ShiftCode;
@@ -32,6 +32,38 @@ export function flightAgentNeedAt(f: Flight, a: Airline, t: number): number {
   return 0;
 }
 
+/** Arrivals are met from 15 minutes before landing to 30 minutes after. */
+export const ARRIVAL_BEFORE_MIN = 15;
+export const ARRIVAL_AFTER_MIN = 30;
+
+/** The date this flight's inbound lands here, or null when there's no inbound to meet. */
+export function arrivalDateOf(f: Flight): string | null {
+  if (f.kind === "departure" || f.ronOf || f.ops?.status === "cancelled") return null;
+  return f.overnight ? addDays(f.date, -1) : f.date;
+}
+
+/** The aircraft doesn't leave again on this visit: arrival only, scheduled RON, or kept overnight today. */
+export const visitEndsHere = (f: Flight) => f.kind === "arrival" || f.ops?.status === "ron" || (!!f.overnight && !f.ronOf);
+
+/** The airline's arrival SLA with defaults filled in. */
+export const arrivalSla = (a: Airline) => ({ meet: a.sla.arrival ?? 1, perWheelchair: a.sla.arrivalPerWheelchair ?? 1, perService: a.sla.arrivalPerService ?? 1 });
+
+/** Agents needed to meet this flight's arrival: the airline's base for visits that end here, plus extras for requests. */
+export function flightArrivalNeed(f: Flight, a: Airline): number {
+  if (!arrivalDateOf(f)) return 0;
+  const s = arrivalSla(a);
+  const n = f.arrivalNeeds;
+  const extras = n ? n.wheelchairs * s.perWheelchair + (n.meetGreet + n.special) * s.perService : 0;
+  return (visitEndsHere(f) ? s.meet : 0) + extras;
+}
+
+/** Agents needed at minute t of the arrival date. */
+export function flightArrivalNeedAt(f: Flight, a: Airline, t: number): number {
+  const sta = toMinutes(f.sta);
+  if (t < sta - ARRIVAL_BEFORE_MIN || t >= sta + ARRIVAL_AFTER_MIN) return 0;
+  return flightArrivalNeed(f, a);
+}
+
 export function flightActiveAt(f: Flight, t: number): boolean {
   if (!departsToday(f)) return false;
   const std = toMinutes(effectiveStd(f));
@@ -51,7 +83,7 @@ export function shiftDemand(flights: Flight[], airline: Airline, shift: "E" | "L
     let l = 0;
     for (const f of flights) {
       if (f.airline !== airline.code) continue;
-      const need = flightAgentNeedAt(f, airline, t);
+      const need = flightAgentNeedAt(f, airline, t) + (arrivalDateOf(f) === f.date ? flightArrivalNeedAt(f, airline, t) : 0);
       if (need > 0) {
         a += need;
         contributing.add(f.id);

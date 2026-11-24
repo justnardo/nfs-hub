@@ -148,12 +148,12 @@ function SlaSources() {
       <CardHeader>
         <div>
           <CardTitle>Where the required numbers come from</CardTitle>
-          <CardDescription>Each airline's SLA minimums. Per flight: the counter figure while check-in is open (3 h to 1 h before departure), the gate figure from 1 h before to 10 min after, and a lead while any flight is worked. Overlapping flights add up.</CardDescription>
+          <CardDescription>Each airline's SLA minimums. Per departure: the counter figure while check-in is open (3 h to 1 h before), the gate figure from 1 h before to 10 min after, and a lead while any flight is worked. Per arrival: the meet figure when the aircraft ends its day here, plus extra agents for wheelchairs, meet & greet and special services. Overlapping flights add up.</CardDescription>
         </div>
       </CardHeader>
       <CardContent className="px-0 sm:px-5">
         <Table>
-          <thead><Tr><Th>Airline</Th><Th className="text-center">Counter</Th><Th className="text-center">Gate</Th><Th className="text-center">Lead</Th><Th>SLA</Th><Th /></Tr></thead>
+          <thead><Tr><Th>Airline</Th><Th className="text-center">Counter</Th><Th className="text-center">Gate</Th><Th className="text-center">Lead</Th><Th className="text-center">Arrival</Th><Th>SLA</Th><Th /></Tr></thead>
           <tbody>
             {list.map((a) => (
               <Tr key={a.code}>
@@ -161,6 +161,7 @@ function SlaSources() {
                 <Td className="text-center tabular">{a.sla.counter}</Td>
                 <Td className="text-center tabular">{a.sla.gate + (a.usesJetBridge ? a.sla.jetBridge : 0)}{a.usesJetBridge && a.sla.jetBridge ? <span className="text-[10px] text-muted"> incl. bridge</span> : null}</Td>
                 <Td className="text-center tabular">{a.sla.lead}</Td>
+                <Td className="text-center tabular" title="To meet an aircraft that ends its day here · extra per wheelchair · per meet & greet / special">{a.sla.arrival ?? 1}<span className="text-[10px] text-muted"> +{a.sla.arrivalPerWheelchair ?? 1}/♿ +{a.sla.arrivalPerService ?? 1}/req</span></Td>
                 <Td>{a.slaConfirmed ? <Badge tone="ok">{a.slaAgreement ? `Agreed ${formatDate(a.slaAgreement.agreedOn, { day: "numeric", month: "short" })}` : "Agreed"}</Badge> : <Badge tone="gold">Placeholder</Badge>}</Td>
                 <Td className="text-right">
                   <Link href={`/airlines/${a.code}${manage ? "?sla=edit" : ""}#sla`} className="text-xs font-semibold whitespace-nowrap text-brand-600 transition-colors hover:text-brand-700">{manage ? "Update" : "View"}</Link>

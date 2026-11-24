@@ -16,6 +16,13 @@ const FIELDS: { k: Key; label: string; short: string; hint: string }[] = [
   { k: "lead", label: "Lead", short: "Lead", hint: "Passenger service lead on duty" },
   { k: "supervisor", label: "Supervisor", short: "Supervisor", hint: "Kept on record; coverage doesn't count supervisors yet" },
 ];
+const ARRIVAL_FIELDS: { k: Key; label: string; hint: string }[] = [
+  { k: "arrival", label: "Meet the aircraft", hint: "Agents for an inbound that ends its day here (arrival only or RON)" },
+  { k: "arrivalPerWheelchair", label: "Per wheelchair", hint: "Extra agents for each wheelchair passenger" },
+  { k: "arrivalPerService", label: "Per meet & greet / special", hint: "Extra agents for each request" },
+];
+const DEFAULT_ARRIVAL = { arrival: 1, arrivalPerWheelchair: 1, arrivalPerService: 1 } as const;
+const val = (sla: SlaMinimums, k: Key) => sla[k] ?? (DEFAULT_ARRIVAL as Partial<Record<Key, number>>)[k] ?? 0;
 const fieldsFor = (a: Airline) => FIELDS.filter((f) => f.k !== "jetBridge" || a.usesJetBridge);
 /** The figures the coverage engine actually uses. */
 const usedFor = (a: Airline) => fieldsFor(a).filter((f) => f.k !== "supervisor");
@@ -27,6 +34,7 @@ export function slaRule(a: Airline, sla: SlaMinimums = a.sla) {
     `Check-in (3 h to 1 h before departure): ${sla.counter} agent${sla.counter === 1 ? "" : "s"} per flight`,
     `Gate (1 h before to 10 min after departure): ${gate} agent${gate === 1 ? "" : "s"} per flight${a.usesJetBridge && sla.jetBridge ? `, including ${sla.jetBridge} on the jet bridge` : ""}`,
     sla.lead ? "A lead on duty whenever a flight is being worked" : "No lead required",
+    `Arrivals (15 min before landing to 30 after): ${val(sla, "arrival")} to meet an aircraft that ends its day here, plus ${val(sla, "arrivalPerWheelchair")} per wheelchair and ${val(sla, "arrivalPerService")} per meet & greet or special service`,
     "Flights at the same time add together, so the busiest moment of a shift sets what it needs",
   ];
 }
@@ -61,6 +69,9 @@ export function SlaCard({ airline, autoOpen = false }: { airline: Airline; autoO
             </div>
           ))}
         </div>
+        <p className="mt-2 rounded-lg bg-surface px-3 py-2 text-xs">
+          <span className="font-semibold">Arrivals:</span> {val(airline.sla, "arrival")} to meet · +{val(airline.sla, "arrivalPerWheelchair")} per wheelchair · +{val(airline.sla, "arrivalPerService")} per meet &amp; greet / special
+        </p>
         <ul className="mt-3 space-y-1 text-xs text-muted">
           {slaRule(airline).map((r) => <li key={r} className="flex gap-1.5"><span className="mt-1.5 size-1 shrink-0 rounded-full bg-brand-500" />{r}</li>)}
         </ul>
@@ -100,11 +111,11 @@ export function SlaCard({ airline, autoOpen = false }: { airline: Airline; autoO
 function SlaDialog({ airline, onClose }: { airline: Airline; onClose: () => void }) {
   const hub = useHub();
   const input = useEngineInput();
-  const [sla, setSla] = React.useState<SlaMinimums>({ ...airline.sla });
+  const [sla, setSla] = React.useState<SlaMinimums>({ ...DEFAULT_ARRIVAL, ...airline.sla });
   const [agreedOn, setAgreedOn] = React.useState(hub.today);
   const [agreedWith, setAgreedWith] = React.useState(airline.stationManager.name);
   const [note, setNote] = React.useState("");
-  const changed = fieldsFor(airline).some((f) => sla[f.k] !== airline.sla[f.k]);
+  const changed = [...fieldsFor(airline), ...ARRIVAL_FIELDS].some((f) => val(sla, f.k) !== val(airline.sla, f.k));
   const set = (k: Key, v: string) => setSla((x) => ({ ...x, [k]: Math.max(0, Math.min(12, Math.round(Number(v) || 0))) }));
 
   // What the new figures would do to the next 7 days on the current roster
@@ -147,6 +158,16 @@ function SlaDialog({ airline, onClose }: { airline: Airline; onClose: () => void
           ))}
         </div>
 
+        <p className="mt-4 mb-1.5 text-xs font-semibold text-brand-700">Meeting arrivals</p>
+        <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
+          {ARRIVAL_FIELDS.map((f) => (
+            <div key={f.k}>
+              <Label className="text-xs">{f.label}</Label>
+              <Input type="number" inputMode="numeric" min={0} max={12} value={val(sla, f.k)} onChange={(e) => set(f.k, e.target.value)} className={cn("mt-1", val(sla, f.k) !== val(airline.sla, f.k) && "border-brand-400 ring-1 ring-brand-200")} />
+              <p className="mt-0.5 text-[10.5px] leading-tight text-muted">{f.hint}{val(sla, f.k) !== val(airline.sla, f.k) ? ` · was ${val(airline.sla, f.k)}` : ""}</p>
+            </div>
+          ))}
+        </div>
         <div className="mt-4 rounded-lg bg-surface p-3 text-xs">
           <p className="mb-1 flex items-center gap-1.5 font-semibold"><Info className="size-3.5 text-brand-600" /> How Gateline will use this</p>
           <ul className="space-y-0.5 text-muted">{slaRule(airline, sla).map((r) => <li key={r}>· {r}</li>)}</ul>
