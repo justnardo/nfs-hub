@@ -1,13 +1,15 @@
 "use client";
 import * as React from "react";
 import Link from "next/link";
-import { AlertTriangle, Ban, CheckCircle2, ShieldAlert, Undo2 } from "lucide-react";
+import { AlertTriangle, ArrowRight, Ban, CheckCircle2, Lock, ShieldAlert, Undo2 } from "lucide-react";
 import { Avatar, Badge, Button, Dialog, DialogContent, Label, Textarea, cn } from "@nfs/ui";
 import { can } from "@nfs/auth";
 import { SHIFTS, formatDate, type Airline, type FlightStatus, type Person } from "@nfs/db";
 import { checkReassignment, gapText, suggestFixes, type CoverageCell, type CoverageLevel } from "@nfs/rules";
 import type { CellChange } from "@/lib/periods";
 import { flash, markChanged } from "./flash";
+import { slaMet } from "@/lib/metrics";
+import { ABSENCE_TYPES } from "@/lib/absence";
 import { useHub, useEngineInput, personName } from "@/lib/store";
 
 export function AirlineChip({ airline, size = "sm" }: { airline: Airline; size?: "sm" | "md" | "lg" }) {
@@ -108,11 +110,12 @@ export function CoverageHeatmap({ cells, days, onCell, compact = false }: { cell
                       <button
                         disabled={c.level === "none" || !onCell}
                         onClick={() => onCell?.(c)}
-                        title={`${a.name} · ${formatDate(d)} · ${SHIFTS[s].label}: ${c.assigned}/${c.required} agents, lead ${c.leadsAssigned}/${c.leadsRequired}`}
+                        title={`${a.name} · ${formatDate(d)} · ${SHIFTS[s].label}: ${c.assigned}/${c.required} agents, lead ${c.leadsAssigned}/${c.leadsRequired}${d < today ? " · past, view only" : ""}`}
                         className={cn(
                           "relative flex h-10 w-full min-w-11 flex-col items-center justify-center rounded-md border text-[11px] font-bold tabular transition-colors",
                           LEVEL_STYLE[c.level],
                           onCell && c.level !== "none" ? "cursor-pointer" : "cursor-default",
+                          d < today && c.level !== "none" && "opacity-60 saturate-50 hover:opacity-100",
                         )}
                       >
                         {c.level === "none" ? "·" : `${c.assigned}/${c.required}`}
@@ -131,6 +134,7 @@ export function CoverageHeatmap({ cells, days, onCell, compact = false }: { cell
         <Legend cls="bg-ok-soft border-green-200" label="SLA met" />
         <Legend cls="bg-warn-soft border-amber-200" label="Short by up to 25% or no lead" />
         <Legend cls="bg-bad-soft border-red-200" label="Below 75% of SLA" />
+        {days.some((d) => d < today) ? <span className="inline-flex items-center gap-1"><Lock className="size-3" /> Faded days have passed: view only</span> : null}
         <span className="inline-flex items-center gap-1.5"><span className="size-1.5 rounded-full bg-brand-500" /> Cover placed</span>
         <span>Cells show trained agents on shift ÷ SLA peak demand</span>
       </div>
@@ -162,8 +166,11 @@ export function ReassignDialog({ cell, open, onOpenChange }: { cell: CoverageCel
     setDone([]);
   }, [cell?.airline, cell?.date, cell?.shift]);
 
-  const fixes = React.useMemo(() => (cell && open ? suggestFixes(input, { airline: cell.airline, date: cell.date, shift: cell.shift }, hub.rules) : []), [cell, open, input, hub.rules]);
+  const past = !!cell && cell.date < hub.today;
+  const fixes = React.useMemo(() => (cell && open && !past ? suggestFixes(input, { airline: cell.airline, date: cell.date, shift: cell.shift }, hub.rules) : []), [cell, open, past, input, hub.rules]);
   if (!cell) return null;
+  // The past is a record: show what happened, no fixes
+  if (past) return <CoverageSummaryDialog cell={cell} open={open} onOpenChange={onOpenChange} />;
   const airline = hub.ds.airlines.find((a) => a.code === cell.airline)!;
   const flights = hub.ds.flights.filter((f) => cell.flightIds.includes(f.id));
   const placed = hub.reassignments.filter((r) => r.date === cell.date && r.shift === cell.shift && r.toAirline === airline.code);
@@ -360,5 +367,114 @@ export function PersonLink({ p }: { p?: Person | null }) {
     <Link href={`/agents/${p.id}`} className="font-medium text-fg transition-colors hover:text-brand-600">
       {personName(p)}
     </Link>
+  );
+}
+
+/** Read-only summary of a shift that has already happened: who was there, what changed, how the flights went. */
+export function CoverageSummaryDialog({ cell, open, onOpenChange }: { cell: CoverageCell; open: boolean; onOpenChange: (v: boolean) => void }) {
+  const hub = useHub();
+  const airline = hub.ds.airlines.find((a) => a.code === cell.airline);
+  if (!airline) return null;
+  const met = cell.assigned >= cell.required && cell.leadsAssigned >= cell.leadsRequired;
+  const flights = hub.ds.flights.filter((f) => cell.flightIds.includes(f.id)).sort((a, b) => a.std.localeCompare(b.std));
+  const coversIn = hub.reassignments.filter((r) => r.date === cell.date && r.shift === cell.shift && r.toAirline === airline.code);
+  const coversOut = hub.reassignments.filter((r) => r.date === cell.date && r.shift === cell.shift && r.fromAirline === airline.code);
+  const outIds = new Set(coversOut.map((r) => r.personId));
+  const absent = hub.absences
+    .filter((a) => a.from <= cell.date && a.to >= cell.date)
+    .map((a) => ({ a, p: hub.people.get(a.personId) }))
+    .filter((x) => x.p?.coreAirline === airline.code);
+  const absentIds = new Set(absent.map((x) => x.a.personId));
+  const onShift = hub.ds.roster
+    .filter((r) => r.date === cell.date && (r.shift === cell.shift || r.shift === "M") && !outIds.has(r.personId) && !absentIds.has(r.personId))
+    .map((r) => hub.people.get(r.personId))
+    .filter((p): p is Person => !!p && p.coreAirline === airline.code && (p.role === "agent" || p.role === "lead"))
+    .concat(coversIn.map((r) => hub.people.get(r.personId)).filter((p): p is Person => !!p))
+    .sort((a, b) => (a.role === "lead" ? 0 : 1) - (b.role === "lead" ? 0 : 1));
+  const short = cell.required - cell.assigned;
+  const nothing = !coversIn.length && !coversOut.length && !absent.length;
+  const label = "mb-1.5 text-xs font-semibold tracking-wide text-muted uppercase";
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent
+        className="max-w-2xl"
+        title={`${airline.name} · ${formatDate(cell.date, { weekday: "long", day: "numeric", month: "short" })} · ${SHIFTS[cell.shift].label}`}
+        description="This shift has already happened, so its coverage can't be changed. Here's how it went."
+        footer={<div className="flex justify-end"><Button variant="outline" onClick={() => onOpenChange(false)}>Close</Button></div>}
+      >
+        <div className={cn("flex items-start gap-3 rounded-xl border p-3.5", met ? "border-green-200 bg-ok-soft" : cell.level === "red" ? "border-red-200 bg-bad-soft" : "border-amber-200 bg-warn-soft")}>
+          {met ? <CheckCircle2 className="mt-0.5 size-5 shrink-0 text-ok" /> : <AlertTriangle className={cn("mt-0.5 size-5 shrink-0", cell.level === "red" ? "text-bad" : "text-amber-600")} />}
+          <div className="min-w-0 text-sm">
+            <p className="font-semibold">{met ? "Covered: SLA met" : short > 0 ? `Ran ${short} agent${short === 1 ? "" : "s"} short` : "Ran without a lead"}</p>
+            <p className="mt-0.5 text-muted">
+              {cell.assigned} of {cell.required} agents · lead {cell.leadsAssigned}/{cell.leadsRequired}
+              {!met && gapText(cell) ? ` · short ${gapText(cell)}` : ""}
+            </p>
+          </div>
+        </div>
+
+        <div className="mt-4 grid gap-4 sm:grid-cols-2">
+          <div>
+            <p className={label}>Rostered for this shift</p>
+            {onShift.length === 0 ? <p className="text-sm text-muted">Nobody from the team was rostered.</p> : null}
+            <ul className="space-y-1 text-sm">
+              {onShift.map((p) => (
+                <li key={p.id} className="flex items-center gap-2">
+                  <span className="min-w-0 flex-1 truncate">{personName(p)}</span>
+                  {p.role === "lead" ? <Badge tone="dark">Lead</Badge> : null}
+                  {coversIn.some((r) => r.personId === p.id) ? <Badge tone="brand">Cover</Badge> : null}
+                </li>
+              ))}
+            </ul>
+          </div>
+          <div>
+            <p className={label}>What changed on the day</p>
+            {nothing ? <p className="text-sm text-muted">Worked as rostered: no sick calls or covers.</p> : null}
+            <ul className="space-y-1.5 text-sm">
+              {absent.map(({ a, p }) => (
+                <li key={a.id}><span className="font-semibold">{personName(p)}</span> <span className="text-muted">· {ABSENCE_TYPES[a.type]?.label ?? a.type}</span></li>
+              ))}
+              {coversIn.map((r) => (
+                <li key={r.id}><span className="font-semibold">{personName(hub.people.get(r.personId))}</span> <span className="text-muted">covered from {r.fromAirline} · approved by {r.approvedBy}{r.overrideReason ? ` · override: ${r.overrideReason}` : ""}</span></li>
+              ))}
+              {coversOut.map((r) => (
+                <li key={r.id}><span className="font-semibold">{personName(hub.people.get(r.personId))}</span> <span className="text-muted">helped {r.toAirline} instead</span></li>
+              ))}
+            </ul>
+          </div>
+        </div>
+
+        <div className="mt-4">
+          <p className={label}>Flights</p>
+          {flights.length === 0 ? <p className="text-sm text-muted">No departures in this shift.</p> : null}
+          {flights.length ? (
+            <div className="divide-y divide-line rounded-lg border border-line">
+              {flights.map((f) => {
+                const log = hub.logByFlight.get(f.id);
+                return (
+                  <div key={f.id} className="flex flex-wrap items-center gap-2 px-3 py-2 text-sm">
+                    <span className="w-20 font-semibold">{f.flightNo}</span>
+                    <span className="text-muted tabular">STD {f.std}</span>
+                    <span className="flex-1" />
+                    {log?.status === "filed" ? (
+                      <>
+                        <Badge tone={log.delayMinutes <= 0 ? "ok" : log.delayMinutes <= 15 ? "warn" : "bad"}>{log.delayMinutes <= 0 ? "On time" : `+${log.delayMinutes} min`}</Badge>
+                        <Badge tone={slaMet(log, airline) ? "ok" : "warn"}>{slaMet(log, airline) ? "Full team" : "Team short"}</Badge>
+                        <Link href={`/records/${log.id}`} className="inline-flex items-center gap-0.5 text-xs font-semibold text-brand-600 transition-colors hover:text-brand-700">Record <ArrowRight className="size-3.5" /></Link>
+                      </>
+                    ) : (
+                      <Badge tone="neutral">Not filed</Badge>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          ) : null}
+        </div>
+
+        <p className="mt-4 flex items-center gap-1.5 text-xs text-muted"><Lock className="size-3.5" /> Past shifts are read only. If something was recorded wrong, correct it in the flight record.</p>
+      </DialogContent>
+    </Dialog>
   );
 }

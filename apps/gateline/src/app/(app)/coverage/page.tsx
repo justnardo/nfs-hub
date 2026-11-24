@@ -91,7 +91,7 @@ export default function CoveragePage() {
         <CardHeader>
           <div>
             <CardTitle>Week of {formatDate(ws, { day: "numeric", month: "long" })}</CardTitle>
-            <CardDescription>Tap an amber or red cell to see who can cover. Core agents are protected; untrained agents are blocked.</CardDescription>
+            <CardDescription>{mode === "history" ? "Past week: tap any shift for a summary of how it was covered. Past days can't be changed." : "Tap an amber or red cell to see who can cover. Past days open a read-only summary."}</CardDescription>
           </div>
           <Badge tone="gold">SLA figures pending NFS confirmation</Badge>
         </CardHeader>
