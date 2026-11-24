@@ -326,11 +326,17 @@ export interface Station {
   /** Short airport label for headers, e.g. "LPIA". */
   short: string;
 }
-export const STATIONS: Station[] = [
+/**
+ * Stations switched on in the app. Exuma is built but off for now:
+ * add "GGT" here to bring back its airlines, team, rosters and the station switch.
+ */
+export const ENABLED_STATIONS: string[] = ["NAS"];
+export const ALL_STATIONS: Station[] = [
   { code: "NAS", name: "Nassau", airport: "Lynden Pindling International Airport", short: "LPIA" },
   { code: "GGT", name: "Exuma", airport: "Exuma International Airport", short: "Exuma Intl" },
 ];
+export const STATIONS: Station[] = ALL_STATIONS.filter((s) => ENABLED_STATIONS.includes(s.code));
 export const DEFAULT_STATION = "NAS";
 /** Station of an airline or person; missing means Nassau. */
 export const stationOf = (x?: { station?: string } | null): string => x?.station ?? DEFAULT_STATION;
-export const stationBy = (code: string): Station => STATIONS.find((s) => s.code === code) ?? STATIONS[0];
+export const stationBy = (code: string): Station => ALL_STATIONS.find((s) => s.code === code) ?? ALL_STATIONS[0];

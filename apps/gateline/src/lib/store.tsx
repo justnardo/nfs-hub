@@ -995,18 +995,21 @@ export function HubProvider({ children }: { children: React.ReactNode }) {
 
   // ---------------- Station scope ----------------
   const meP = session ? people.get(session.personId) ?? null : null;
-  const canSwitchStation = meP?.role === "manager" || meP?.role === "admin";
-  const station = canSwitchStation ? stationPick ?? stationOf(meP) : stationOf(meP);
+  const canSwitchStation = STATIONS.length > 1 && (meP?.role === "manager" || meP?.role === "admin");
+  const pickOk = stationPick && STATIONS.some((x) => x.code === stationPick) ? stationPick : null;
+  const station = canSwitchStation ? pickOk ?? stationOf(meP) : stationOf(meP);
   const setStation = React.useCallback((code: string) => {
     setStationPick(code);
     save("local", K_STATION, code);
   }, []);
   const scoped = React.useMemo(() => {
     // Signed-out pages (the station manager's private link) see every station
-    if (!meP) return { ds, gateLogs, feedback, reassignments, routes, charters, periods, audit, absences, staffRequests };
+    if (!meP) return { people, ds, gateLogs, feedback, reassignments, routes, charters, periods, audit, absences, staffRequests };
     const airlinesIn = ds.airlines.filter((a) => stationOf(a) === station);
     const codes = new Set(airlinesIn.map((a) => a.code));
-    const peopleIn = ds.people.filter((p) => p.role === "manager" || p.role === "admin" || stationOf(p) === station);
+    const peopleIn = ds.people
+      .filter((p) => p.role === "manager" || p.role === "admin" || stationOf(p) === station)
+      .map((p) => (p.trainedAirlines.every((c) => codes.has(c)) ? p : { ...p, trainedAirlines: p.trainedAirlines.filter((c) => codes.has(c)), training: p.training.filter((t) => codes.has(t.airline)) }));
     const ids = new Set(peopleIn.map((p) => p.id));
     const inTeams = (teams?: string[]) => !teams?.length || teams.some((t) => codes.has(t) || !/^[A-Z0-9]{2,3}$/.test(t) || !ds.airlines.some((a) => a.code === t));
     return {
@@ -1028,8 +1031,9 @@ export function HubProvider({ children }: { children: React.ReactNode }) {
       audit: audit.filter((e) => inTeams(e.teams)),
       absences: absences.filter((a) => ids.has(a.personId)),
       staffRequests: staffRequests.filter((r) => ids.has(r.by)),
+      people: (() => { const byId = new Map(peopleIn.map((x) => [x.id, x])); return new Map([...people].map(([id, p]) => [id, byId.get(id) ?? p])); })(),
     };
-  }, [ds, meP, station, gateLogs, feedback, reassignments, routes, charters, periods, audit, absences, staffRequests]);
+  }, [ds, people, meP, station, gateLogs, feedback, reassignments, routes, charters, periods, audit, absences, staffRequests]);
 
   const value: HubState = {
     ready: mounted,
@@ -1037,8 +1041,8 @@ export function HubProvider({ children }: { children: React.ReactNode }) {
     today: clock.date,
     nowMin: clock.minutes,
     session,
-    me: session ? people.get(session.personId) ?? null : null,
-    people,
+    me: session ? scoped.people.get(session.personId) ?? null : null,
+    people: scoped.people,
     rules,
     gateLogs: scoped.gateLogs,
     logByFlight,

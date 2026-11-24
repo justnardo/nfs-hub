@@ -1,4 +1,4 @@
-import type { Airline, RosterLine } from "@nfs/db";
+import { ENABLED_STATIONS, type Airline, type RosterLine } from "@nfs/db";
 
 /** Airline marks uploaded in Rampline (public bucket), reused so both modules show the same logos. */
 export const RAMPLINE_MARKS = "https://cajatvbkaltwxtywpsjp.supabase.co/storage/v1/object/public/airline-marks";
@@ -44,7 +44,7 @@ const SOUTHWEST_LINES: RosterLine[] = [
   { label: "B", group: "lead", days: [NINE, NINE, NINE, NINE, O, O, NINE] },
 ];
 
-export const AIRLINES: Airline[] = [
+const ALL_AIRLINES: Airline[] = [
   {
     code: "UA",
     name: "United Airlines",
@@ -229,6 +229,9 @@ export const AIRLINES: Airline[] = [
     charter: true,
   },
 ];
+
+/** Airlines at the stations switched on (see ENABLED_STATIONS). */
+export const AIRLINES: Airline[] = ALL_AIRLINES.filter((a) => ENABLED_STATIONS.includes(a.station ?? "NAS"));
 
 export interface RouteTemplate {
   airline: string;

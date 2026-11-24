@@ -148,7 +148,7 @@ export function generateDataset(today: string, nowMinutes: number, config: Datas
 
   // ---------- Exuma station (GGT) ----------
   // Its own random stream and staff numbers (NFS-51xx), so adding it doesn't change Nassau's people
-  {
+  if (AIRLINES.some((a) => a.station === "GGT")) {
     const xr = rng("exuma-people-v1");
     let no = 5100;
     const mk = (role: Role, core: string | null, trained: string[], hireYear: number, fixed?: number): Person => {
