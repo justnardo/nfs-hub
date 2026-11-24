@@ -1,0 +1,31 @@
+{
+  "name": "@nfs/hub",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "dev": "next dev -p 3200",
+    "build": "next build",
+    "start": "next start -p 3200",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@fontsource-variable/inter": "^5.2.8",
+    "@fontsource-variable/space-grotesk": "^5.2.8",
+    "@nfs/db": "workspace:*",
+    "@nfs/ui": "workspace:*",
+    "@supabase/supabase-js": "^2.58.0",
+    "lucide-react": "^0.548.0",
+    "next": "15.5.29",
+    "react": "19.1.1",
+    "react-dom": "19.1.1"
+  },
+  "devDependencies": {
+    "@nfs/config": "workspace:*",
+    "@tailwindcss/postcss": "^4.1.16",
+    "@types/node": "^22.10.0",
+    "@types/react": "^19.1.0",
+    "@types/react-dom": "^19.1.0",
+    "tailwindcss": "^4.1.16",
+    "typescript": "^5.9.0"
+  }
+}

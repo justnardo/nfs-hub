@@ -14,6 +14,7 @@ import { useHub } from "@/lib/store";
 import { FirstGlanceCredit, GatelineWordmark, NfsMark } from "./brand";
 import { GlobalSearch, type SearchPage } from "./global-search";
 import { NotificationBell } from "./notifications";
+import { HubSwitcher } from "./hub-switcher";
 import { flash, FlashHost } from "./flash";
 import { SiteLoader, useFirstLoad } from "./site-loader";
 
@@ -293,6 +294,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           <div className="ml-auto flex items-center gap-2 md:ml-0">
             <div className="md:hidden"><GlobalSearch pages={SEARCH_PAGES} variant="icon" /></div>
             <Badge tone="gold" className="hidden xl:inline-flex">Demo data · fictional staff</Badge>
+            <HubSwitcher />
             <NotificationBell />
             <OfflineNotice />
             <button

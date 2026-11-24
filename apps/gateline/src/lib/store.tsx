@@ -1,4 +1,5 @@
 "use client";
+import { flash } from "@/components/flash";
 import * as React from "react";
 import {
   STATIONS, addDays, formatDate, nassauNow, stationOf, type Airline, type ArrivalNeeds, type Flight, type FlightOps, type Station, arrivalDateOf, type FeedbackItem, type GateEventType, type GateLog, type HubEvent, type Person,
@@ -233,7 +234,16 @@ export function HubProvider({ children }: { children: React.ReactNode }) {
       if (!e.key || e.key.startsWith("gateline.") || e.key.startsWith("nfs-hub.")) reload();
     };
     window.addEventListener("storage", onStorage);
-    const unsub = subscribe(() => setEvents(localEvents()));
+    const since = Date.now();
+    const unsub = subscribe((ev) => {
+      setEvents(localEvents());
+      // Something new from operations in Rampline: say so, wherever the user is in Gateline
+      if (ev.module !== "rampline" || Date.parse(ev.at) < since - 5000) return;
+      const p = ev.payload as Record<string, unknown>;
+      if (ev.type === EVENT_TYPES.inboundAlert)
+        flash({ title: `${p.urgent ? "Urgent · " : ""}${String(p.category ?? "Alert")} · ${String(p.flightNo ?? "")} inbound`, body: `From Rampline operations: ${String(p.message ?? "")}`, tone: "warn" }, 12000);
+      if (ev.type === EVENT_TYPES.offloadDone) flash({ title: `Ramp: bags off ${String(p.flightNo ?? "")}`, body: `Rampline confirmed the offload${p.by ? ` (${String(p.by)})` : ""}.`, tone: "ok" });
+    });
     if ("serviceWorker" in navigator && process.env.NODE_ENV === "production") {
       navigator.serviceWorker.register("/sw.js").catch(() => {});
     }
@@ -411,13 +421,16 @@ export function HubProvider({ children }: { children: React.ReactNode }) {
         setPending(p);
       } else write([{ kind: "log", id: log.flightId, payload: stamped }]);
       if (change) {
-        void publish({ module: "gateline", type: change.type, payload: { flightId: log.flightId, airline: log.airline, ...change.payload } }).then(() => setEvents(localEvents()));
+        // Flight number and date ride along so Rampline (and the Hub page) can match the turn without Gateline's ids
+        const f = ds.flights.find((x) => x.id === log.flightId);
+        const ref = { flightId: log.flightId, flightNo: f?.flightNo, date: log.date, airline: log.airline, gate: f?.gate };
+        void publish({ module: "gateline", type: change.type, payload: { ...ref, ...change.payload } }).then(() => setEvents(localEvents()));
         const ev = change.payload.event as GateEventType | undefined;
-        if (ev === "door_close") void publish({ module: "gateline", type: EVENT_TYPES.doorClose, payload: { flightId: log.flightId, at: change.payload.at } });
-        if (ev === "pushback") void publish({ module: "gateline", type: EVENT_TYPES.pushback, payload: { flightId: log.flightId, at: change.payload.at } });
+        if (ev === "door_close") void publish({ module: "gateline", type: EVENT_TYPES.doorClose, payload: { ...ref, at: change.payload.at } });
+        if (ev === "pushback") void publish({ module: "gateline", type: EVENT_TYPES.pushback, payload: { ...ref, at: change.payload.at } });
       }
     },
-    [offline, write],
+    [offline, write, ds],
   );
 
   const fmtDay = (d: string) => new Date(`${d}T12:00:00`).toLocaleDateString("en-GB", { weekday: "short", day: "numeric", month: "short" });
