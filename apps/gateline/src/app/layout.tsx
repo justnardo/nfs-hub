@@ -10,6 +10,7 @@ export const metadata: Metadata = {
   manifest: "/manifest.webmanifest",
   appleWebApp: { capable: true, title: "Gateline", statusBarStyle: "black-translucent" },
   icons: { apple: "/icons/apple-touch-icon.png" },
+  robots: { index: false, follow: false },
 };
 
 export const viewport: Viewport = {
